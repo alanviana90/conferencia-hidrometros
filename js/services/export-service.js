@@ -13,6 +13,7 @@ const STATUS_LABEL = {
   FORA_DO_FILTRO: 'FORA DO FILTRO',
   SERIE_INEXISTENTE: 'SÉRIE INEXISTENTE (não consta na base)',
   PENDENTE: 'PENDENTE',
+  ADICIONADO: 'EXCEDENTE — ADICIONADO NA CONFERÊNCIA',
 };
 
 /**
@@ -24,13 +25,13 @@ export async function buildRelatorioLinhas(conferenciaId) {
   const conferencia = await getConferencia(conferenciaId);
   if (!conferencia) throw new Error('Conferência não encontrada.');
 
-  const [itens, base] = await Promise.all([getItensDaConferencia(conferenciaId), dbGetAll(STORES.HIDROMETROS)]);
-  const baseById = new Map(base.map((r) => [r.id, r]));
+  const [itens, base] = await Promise.all([getItensDaConferencia(conferenciaId), dbGetAll(STORES.HIDROMETROS).catch(() => conferencia.baseSnapshot || [])]);
+  const baseById = new Map([...(conferencia.baseSnapshot || []), ...base].map((r) => [r.id, r]));
 
   const itemPorHidrometroId = new Map();
   const itensExtras = [];
   for (const item of itens) {
-    if (item.status === 'FORA_DO_FILTRO' || item.status === 'SERIE_INEXISTENTE') {
+    if (item.status === 'FORA_DO_FILTRO' || item.status === 'SERIE_INEXISTENTE' || item.status === 'ADICIONADO') {
       itensExtras.push(item);
     } else if (item.hidrometroId) {
       itemPorHidrometroId.set(item.hidrometroId, item);
@@ -40,11 +41,13 @@ export async function buildRelatorioLinhas(conferenciaId) {
   const linhas = [];
 
   for (const hid of conferencia.expectedHidrometroIds) {
-    const hidrometro = baseById.get(hid);
-    if (!hidrometro) continue;
     const item = itemPorHidrometroId.get(hid);
+    const hidrometro = item?.hidrometroSnapshot || baseById.get(hid);
+    if (!hidrometro) continue;
     linhas.push({
       'Número de Série': hidrometro.numeroSerie,
+      'Lote / Lacre': item?.lote ?? hidrometro.lote ?? '',
+      'Adicionado durante a conferência': 'Não',
       Código: hidrometro.codigoHidrometro,
       'Ordem de Serviço': hidrometro.ordemServico,
       'ID Devolução': hidrometro.idDevolucao,
@@ -57,9 +60,11 @@ export async function buildRelatorioLinhas(conferenciaId) {
   }
 
   for (const item of itensExtras) {
-    const hidrometro = item.hidrometroId ? baseById.get(item.hidrometroId) : null;
+    const hidrometro = item.hidrometroSnapshot || (item.hidrometroId ? baseById.get(item.hidrometroId) : null);
     linhas.push({
       'Número de Série': item.numeroSerieDigitado,
+      'Lote / Lacre': item.lote ?? hidrometro?.lote ?? '',
+      'Adicionado durante a conferência': item.adicionadoNaConferencia || item.status === 'ADICIONADO' ? 'SIM — EXCEDENTE' : 'Não',
       Código: hidrometro ? hidrometro.codigoHidrometro : '',
       'Ordem de Serviço': hidrometro ? hidrometro.ordemServico : '',
       'ID Devolução': hidrometro ? hidrometro.idDevolucao : '',
@@ -86,6 +91,18 @@ export async function exportarConferenciaXLSX(conferenciaId) {
   const sheet = XLSX.utils.json_to_sheet(linhas);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, sheet, 'Conferência');
+  sheet['!autofilter'] = { ref: sheet['!ref'] || 'A1' };
+  const extras = linhas.filter(r => r['Adicionado durante a conferência'] === 'SIM — EXCEDENTE');
+  if (extras.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(extras), 'Excedentes adicionados');
+  const lotes = new Map();
+  for (const row of linhas) {
+    if (!row['Lote / Lacre'] || !['ENCONTRADO', 'ADICIONADO', 'FORA_DO_FILTRO'].some(status => row.Status === STATUS_LABEL[status])) continue;
+    const lote = row['Lote / Lacre'];
+    if (!lotes.has(lote)) lotes.set(lote, new Set());
+    lotes.get(lote).add(row['Número de Série']);
+  }
+  const sacos = [...lotes].map(([lote, series]) => ({ 'Lote / Lacre': lote, 'Quantidade de hidrômetros': series.size, 'Situação do saco': series.size === 20 ? '20 UNIDADES' : series.size < 20 ? 'INCOMPLETO' : 'ACIMA DE 20' }));
+  if (sacos.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sacos), 'Lotes e lacres');
 
   const nomeArquivo = `conferencia_${slug(conferencia.nome)}_${new Date().toISOString().slice(0, 10)}.xlsx`;
   XLSX.writeFile(wb, nomeArquivo);

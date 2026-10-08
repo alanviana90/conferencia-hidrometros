@@ -5,6 +5,8 @@
  */
 
 import { openDatabase } from './db.js';
+import { escapeHTML } from './utils.js';
+import { fetchHidrometros } from './services/hidrometros-service.js';
 
 /**
  * @typedef {Object} Route
@@ -23,7 +25,6 @@ const ROUTE_DEFS = [
   { path: '/conferencia/:id/resumo', load: () => import('./screens/resumo.js') },
   { path: '/historico', load: () => import('./screens/historico.js') },
   { path: '/base', load: () => import('./screens/base.js') },
-  { path: '/importar', load: () => import('./screens/importar.js') },
   { path: '/config', load: () => import('./screens/config.js') },
 ];
 
@@ -74,7 +75,7 @@ async function renderRoute() {
       await mod.render(app, params, search);
     } catch (err) {
       console.error(err);
-      app.innerHTML = `<div class="content"><div class="card"><strong>Erro ao carregar a tela.</strong><p class="muted">${err instanceof Error ? err.message : String(err)}</p><a class="btn btn-outline" href="#/">Voltar ao início</a></div></div>`;
+      app.innerHTML = `<div class="content"><div class="card"><strong>Erro ao carregar a tela.</strong><p class="muted">${escapeHTML(err instanceof Error ? err.message : String(err))}</p><a class="btn btn-primary" href="#/config">Configurar fonte de dados</a><a class="btn btn-outline" href="#/">Voltar ao início</a></div></div>`;
     }
     return;
   }
@@ -88,7 +89,7 @@ async function registerServiceWorker() {
     await navigator.serviceWorker.register('./service-worker.js');
   } catch (err) {
     // Falha ao registrar SW (ex.: rodando em HTTP puro na rede local) não deve
-    // impedir o app de funcionar — só o cache offline "de verdade" fica indisponível.
+    // impedir o app de funcionar — apenas o cache da interface fica indisponível.
     console.warn('Service worker não registrado:', err);
   }
 }
@@ -96,6 +97,14 @@ async function registerServiceWorker() {
 async function boot() {
   await openDatabase();
   await registerServiceWorker();
+  // Consulta a base central logo na abertura. As telas reutilizam o resultado
+  // em memória para busca e conferência instantâneas.
+  try {
+    await fetchHidrometros({ force: true });
+  } catch (err) {
+    console.warn('Base indisponível:', err);
+    if (!location.hash || location.hash === '#/') location.hash = '#/config';
+  }
   window.addEventListener('hashchange', renderRoute);
   await renderRoute();
 }

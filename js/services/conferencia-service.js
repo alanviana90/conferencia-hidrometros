@@ -7,7 +7,8 @@
  * estas funções e desenham o resultado.
  */
 
-import { dbGetAll, dbGetAllByIndex, dbPut, dbBulkPut, STORES } from '../db.js';
+import { dbGetAll, dbGetAllByIndex, dbPut, dbBulkPut, configGet, STORES } from '../db.js';
+import { queueChange } from './sheets-write.js';
 import { uuid, normalizeText, nowISO } from '../utils.js';
 
 /**
@@ -101,6 +102,8 @@ export async function createConferencia({ nome, operador, filtros, base }) {
     operador,
     filtros,
     expectedHidrometroIds,
+    baseSnapshot: base.map(r => ({ ...r })),
+    loteAtual: '',
     createdAt: now,
     updatedAt: now,
     finalizedAt: /** @type {string|null} */ (null),
@@ -138,8 +141,10 @@ export function computeStats(conferencia, itens) {
   const porHidrometro = new Map();
   let foraDoFiltro = 0;
   let serieInexistente = 0;
+  let excedentes = 0;
 
   for (const item of itens) {
+    if (item.status === 'ADICIONADO') { excedentes++; continue; }
     if (item.status === 'FORA_DO_FILTRO') {
       foraDoFiltro++;
       continue;
@@ -162,7 +167,7 @@ export function computeStats(conferencia, itens) {
   const pendentes = esperado - conferidos;
   const percentual = esperado > 0 ? Math.round((conferidos / esperado) * 100) : 0;
 
-  return { esperado, encontrados, naoEncontrados, conferidos, pendentes, foraDoFiltro, serieInexistente, percentual };
+  return { esperado, encontrados, naoEncontrados, conferidos, pendentes, foraDoFiltro, serieInexistente, excedentes, percentual };
 }
 
 /**
@@ -253,6 +258,19 @@ export async function confirmarSerieInexistente(conferenciaId, serieDigitada, op
   return registrarItem(conferenciaId, null, serieDigitada, 'SERIE_INEXISTENTE', operador);
 }
 
+export async function registrarAdicionado(conferenciaId, hidrometro, operador) {
+  return registrarItem(conferenciaId, hidrometro.id, hidrometro.numeroSerie, 'ADICIONADO', operador);
+}
+
+export async function salvarLoteDoItem(itemId, lote, record) {
+  const all = await dbGetAll(STORES.ITENS_CONFERIDOS);
+  const item = all.find(i => i.id === itemId);
+  if (!item) throw new Error('Registro de conferência não encontrado.');
+  const updated = { ...item, lote, hidrometroSnapshot: { ...record, lote } };
+  await dbPut(STORES.ITENS_CONFERIDOS, updated);
+  return updated;
+}
+
 /** Marca manualmente um item pendente (esperado) como não encontrado, a partir da lista de pendentes. */
 export async function marcarComoNaoEncontrado(conferenciaId, hidrometro, operador) {
   return registrarItem(conferenciaId, hidrometro.id, hidrometro.numeroSerie, 'NAO_ENCONTRADO', operador);
@@ -266,6 +284,8 @@ export async function marcarComoNaoEncontrado(conferenciaId, hidrometro, operado
  * @param {string} operador
  */
 async function registrarItem(conferenciaId, hidrometroId, numeroSerieDigitado, status, operador) {
+  const base = await dbGetAll(STORES.HIDROMETROS);
+  const record = base.find(r => r.id === hidrometroId);
   const item = {
     id: uuid(),
     conferenciaId,
@@ -274,9 +294,15 @@ async function registrarItem(conferenciaId, hidrometroId, numeroSerieDigitado, s
     status,
     timestamp: nowISO(),
     operador,
+    lote: '',
+    hidrometroSnapshot: record ? { ...record } : null,
+    adicionadoNaConferencia: status === 'ADICIONADO',
   };
   await dbPut(STORES.ITENS_CONFERIDOS, item);
   await dbPut(STORES.CONFERENCIAS, { ...(await getConferencia(conferenciaId)), updatedAt: nowISO() });
+  if (record && (await configGet('fonteBase', 'sheets')) === 'sheets') {
+    await queueChange({ action: 'status', record, status: status === 'ADICIONADO' ? 'EXCEDENTE — ADICIONADO NA CONFERÊNCIA' : status === 'NAO_ENCONTRADO' ? 'FALTANTE — NÃO LOCALIZADO FISICAMENTE' : 'CONFERIDO FISICAMENTE' });
+  }
   return item;
 }
 
@@ -294,7 +320,7 @@ export async function getGlobalStats() {
   let conferidosHoje = 0;
 
   for (const item of todosItens) {
-    if (item.status !== 'ENCONTRADO' && item.status !== 'NAO_ENCONTRADO') continue;
+    if (!['ENCONTRADO', 'NAO_ENCONTRADO', 'ADICIONADO'].includes(item.status)) continue;
     if (item.timestamp && item.timestamp.slice(0, 10) === hojeISO) conferidosHoje++;
     if (!item.hidrometroId) continue;
     const prev = latestByHidrometro.get(item.hidrometroId);
@@ -304,7 +330,7 @@ export async function getGlobalStats() {
   let encontrados = 0;
   let naoEncontrados = 0;
   for (const item of latestByHidrometro.values()) {
-    if (item.status === 'ENCONTRADO') encontrados++;
+    if (item.status === 'ENCONTRADO' || item.status === 'ADICIONADO') encontrados++;
     else naoEncontrados++;
   }
 
@@ -326,7 +352,7 @@ export async function finalizarConferencia(conferenciaId) {
   const resolvidos = new Set(itens.filter((i) => i.hidrometroId && i.status !== 'FORA_DO_FILTRO').map((i) => i.hidrometroId));
 
   const base = await dbGetAll(STORES.HIDROMETROS);
-  const byId = new Map(base.map((r) => [r.id, r]));
+  const byId = new Map([...(conferencia.baseSnapshot || []), ...base].map((r) => [r.id, r]));
   const now = nowISO();
 
   const novosItens = [];
@@ -341,9 +367,15 @@ export async function finalizarConferencia(conferenciaId) {
       status: 'NAO_ENCONTRADO',
       timestamp: now,
       operador: conferencia.operador,
+      hidrometroSnapshot: hidrometro ? { ...hidrometro } : null,
     });
   }
   if (novosItens.length) await dbBulkPut(STORES.ITENS_CONFERIDOS, novosItens);
+  if ((await configGet('fonteBase', 'sheets')) === 'sheets') {
+    for (const item of novosItens) {
+      if (item.hidrometroSnapshot) await queueChange({ action: 'status', record: item.hidrometroSnapshot, status: 'FALTANTE — NÃO LOCALIZADO FISICAMENTE' });
+    }
+  }
 
   await dbPut(STORES.CONFERENCIAS, { ...conferencia, status: 'finalizada', finalizedAt: now, updatedAt: now });
 

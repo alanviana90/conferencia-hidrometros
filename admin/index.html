@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Admin — Hidrômetros</title>
+  <link rel="stylesheet" href="./css/admin.css" />
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Painel Admin — Hidrômetros</h1>
+      <button class="btn btn-outline" id="btn-logout" style="display:none">Sair</button>
+    </header>
+
+    <div id="login-section" class="card">
+      <h2>Entrar</h2>
+      <p class="muted">Use sua conta administrativa do Supabase.</p>
+      <form id="login-form">
+        <div class="field">
+          <label for="email">E-mail</label>
+          <input type="email" id="email" required autocomplete="username" />
+        </div>
+        <div class="field">
+          <label for="password">Senha</label>
+          <input type="password" id="password" required autocomplete="current-password" />
+        </div>
+        <button type="submit" class="btn">Entrar</button>
+      </form>
+      <p id="login-error" class="muted" style="color:var(--danger);display:none;margin-top:12px"></p>
+    </div>
+
+    <div id="dashboard-section" style="display:none">
+      <div class="stat-grid" style="margin-bottom:16px">
+        <div class="stat">
+          <div class="value" id="stat-total">—</div>
+          <div class="label">Total de hidrômetros</div>
+        </div>
+        <div class="stat">
+          <div class="value" id="stat-inativos">—</div>
+          <div class="label">Inativos (removidos)</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Última importação</h2>
+        <div id="ultima-importacao" class="muted">Carregando…</div>
+      </div>
+
+      <a class="btn" href="./importar.html" style="width:100%;margin-top:8px">Atualizar Base</a>
+
+      <div class="card" style="margin-top:16px">
+        <h2>Histórico recente</h2>
+        <div id="historico">Carregando…</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script type="module">
+    import { supabase, signIn, signOut, fetchDashboard, fetchImportHistory } from './js/supabase-client.js';
+    import { escapeHTML, formatDateTimeBR } from './js/utils-import.js';
+
+    const loginSection = document.getElementById('login-section');
+    const dashboardSection = document.getElementById('dashboard-section');
+    const btnLogout = document.getElementById('btn-logout');
+
+    function showToast(msg) {
+      const el = document.getElementById('toast');
+      el.textContent = msg;
+      el.style.display = 'block';
+      setTimeout(() => (el.style.display = 'none'), 2800);
+    }
+
+    async function loadDashboard() {
+      const dash = await fetchDashboard();
+      document.getElementById('stat-total').textContent = (dash.total_hidrometros || 0).toLocaleString('pt-BR');
+      document.getElementById('stat-inativos').textContent = (dash.total_inativos || 0).toLocaleString('pt-BR');
+
+      const ultimaEl = document.getElementById('ultima-importacao');
+      const u = dash.ultima_importacao;
+      if (!u) {
+        ultimaEl.innerHTML = '<span class="muted">Nenhuma importação confirmada ainda.</span>';
+      } else {
+        ultimaEl.innerHTML = `
+          <div class="summary-line"><span>Arquivo</span><strong>${escapeHTML(u.nome_arquivo)}</strong></div>
+          <div class="summary-line"><span>Data</span><strong>${formatDateTimeBR(u.data_importacao)}</strong></div>
+          <div class="summary-line"><span>Registros no arquivo</span><strong>${(u.quantidade_registros || 0).toLocaleString('pt-BR')}</strong></div>
+          <div class="summary-line"><span>Novos / Atualizados</span><strong>${u.quantidade_novos} / ${u.quantidade_atualizados}</strong></div>
+        `;
+      }
+
+      const historico = await fetchImportHistory(8);
+      const histEl = document.getElementById('historico');
+      if (!historico.length) {
+        histEl.innerHTML = '<span class="muted">Sem histórico.</span>';
+        return;
+      }
+      histEl.innerHTML = historico
+        .map(
+          (h) => `
+        <div class="history-item">
+          <strong>${escapeHTML(h.nome_arquivo)}</strong>
+          <span class="badge ${h.status === 'confirmado' ? 'ok' : 'err'}">${escapeHTML(h.status)}</span>
+          <div class="muted" style="font-size:.85rem;margin-top:4px">
+            ${formatDateTimeBR(h.data_importacao || h.created_at)} ·
+            +${h.quantidade_novos} novos · ~${h.quantidade_atualizados} atualizados ·
+            ${h.quantidade_removidos || 0} removidos · ${h.quantidade_erros || 0} erros
+          </div>
+        </div>`
+        )
+        .join('');
+    }
+
+    async function showDashboard() {
+      loginSection.style.display = 'none';
+      dashboardSection.style.display = 'block';
+      btnLogout.style.display = 'inline-flex';
+      try {
+        await loadDashboard();
+      } catch (err) {
+        showToast('Erro ao carregar dashboard: ' + (err.message || err));
+      }
+    }
+
+    document.getElementById('login-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = document.getElementById('email').value.trim();
+      const password = document.getElementById('password').value;
+      const errEl = document.getElementById('login-error');
+      errEl.style.display = 'none';
+
+      const { error } = await signIn(email, password);
+      if (error) {
+        errEl.textContent = error.message;
+        errEl.style.display = 'block';
+        return;
+      }
+      await showDashboard();
+    });
+
+    btnLogout.addEventListener('click', async () => {
+      await signOut();
+      location.reload();
+    });
+
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session) await showDashboard();
+  </script>
+</body>
+</html>

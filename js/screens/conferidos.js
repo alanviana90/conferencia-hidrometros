@@ -20,8 +20,8 @@ export async function render(container, params, search) {
   const baseById = new Map(base.map((r) => [r.id, r]));
 
   const resolvidos = itens
-    .filter((i) => i.status === 'ENCONTRADO' || i.status === 'NAO_ENCONTRADO')
-    .map((i) => ({ item: i, hidrometro: baseById.get(i.hidrometroId) }))
+    .filter((i) => ['ENCONTRADO', 'NAO_ENCONTRADO', 'ADICIONADO'].includes(i.status))
+    .map((i) => ({ item: i, hidrometro: i.hidrometroSnapshot || baseById.get(i.hidrometroId) }))
     .filter((x) => x.hidrometro)
     .sort((a, b) => (a.item.timestamp < b.item.timestamp ? 1 : -1));
 
@@ -33,6 +33,7 @@ export async function render(container, params, search) {
           <button type="button" class="chip ${filtroAtual === 'TODOS' ? 'active' : ''}" data-f="TODOS">Todos</button>
           <button type="button" class="chip ${filtroAtual === 'ENCONTRADO' ? 'active' : ''}" data-f="ENCONTRADO">Encontrados</button>
           <button type="button" class="chip ${filtroAtual === 'NAO_ENCONTRADO' ? 'active' : ''}" data-f="NAO_ENCONTRADO">Não encontrados</button>
+          <button type="button" class="chip" data-f="ADICIONADO">Excedentes adicionados</button>
         </div>
         <div id="lista" class="stack"></div>
       </div>
@@ -67,9 +68,9 @@ function renderLista(container, resolvidos) {
     <div class="list-item" data-id="${escapeHTML(item.id)}" role="button">
       <div class="main">
         <div class="title">${escapeHTML(hidrometro.numeroSerie)}</div>
-        <div class="subtitle">${formatDateTimeBR(item.timestamp)}</div>
+        <div class="subtitle">${formatDateTimeBR(item.timestamp)} · Lacre: ${escapeHTML(item.lote || 'não informado')}</div>
       </div>
-      <span class="badge ${item.status === 'ENCONTRADO' ? 'success' : 'danger'}">${item.status === 'ENCONTRADO' ? 'Encontrado' : 'Não encontrado'}</span>
+      <span class="badge ${item.status === 'ADICIONADO' ? 'warning' : item.status === 'ENCONTRADO' ? 'success' : 'danger'}">${item.status === 'ADICIONADO' ? 'Excedente adicionado' : item.status === 'ENCONTRADO' ? 'Encontrado' : 'Não encontrado'}</span>
     </div>`
     )
     .join('');
@@ -92,7 +93,8 @@ function abrirDetalhe({ item, hidrometro }) {
       <div><div class="k">Ordem de Serviço</div><div class="v">${escapeHTML(hidrometro.ordemServico)}</div></div>
       <div><div class="k">ID Devolução</div><div class="v">${escapeHTML(hidrometro.idDevolucao)}</div></div>
       <div><div class="k">Data de Recebimento</div><div class="v">${formatDateBR(hidrometro.dataRecebimento)}</div></div>
-      <div><div class="k">Status</div><div class="v">${item.status === 'ENCONTRADO' ? 'Encontrado' : 'Não encontrado'}</div></div>
+      <div><div class="k">Status</div><div class="v">${item.status === 'ADICIONADO' ? 'EXCEDENTE — ADICIONADO NA CONFERÊNCIA' : item.status === 'ENCONTRADO' ? 'Encontrado' : 'Não encontrado'}</div></div>
+      <div><div class="k">Lote / Lacre</div><div class="v">${escapeHTML(item.lote || 'não informado')}</div></div>
       <div><div class="k">Registrado em</div><div class="v">${formatDateTimeBR(item.timestamp)}</div></div>
     </div>
     <button class="btn btn-outline" id="btn-fechar">Fechar</button>

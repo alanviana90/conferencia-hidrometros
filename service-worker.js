@@ -1,8 +1,7 @@
-// Service Worker do app — cache-first da "casca" inteira, para funcionar 100%
-// offline depois da primeira visita. Não há nenhuma API/backend para chamar:
-// todos os dados ficam no IndexedDB do próprio aparelho.
+// Service Worker da interface. A casca do app fica em cache, mas a base de
+// hidrômetros é consultada no Google Sheets e requer conexão.
 
-const CACHE_NAME = 'hidrometros-cache-v1';
+const CACHE_NAME = 'hidrometros-cache-v7';
 
 const PRECACHE_URLS = [
   './',
@@ -13,6 +12,10 @@ const PRECACHE_URLS = [
   './js/db.js',
   './js/ui.js',
   './js/utils.js',
+  './js/sheets-config.js',
+  './js/services/hidrometros-service.js',
+  './js/services/sheets-source.js',
+  './js/services/sheets-write.js',
   './js/lib/xlsx.full.min.js',
   './js/services/import-service.js',
   './js/services/conferencia-service.js',
@@ -25,7 +28,6 @@ const PRECACHE_URLS = [
   './js/screens/resumo.js',
   './js/screens/historico.js',
   './js/screens/base.js',
-  './js/screens/importar.js',
   './js/screens/config.js',
   './icons/icon.svg',
 ];

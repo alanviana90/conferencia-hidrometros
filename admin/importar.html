@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Importar Excel — Admin Hidrômetros</title>
+  <link rel="stylesheet" href="./css/admin.css" />
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Atualizar Base</h1>
+      <a class="btn btn-outline" href="./index.html">← Dashboard</a>
+    </header>
+
+    <div class="card">
+      <p style="margin-top:0">Selecione a planilha Excel (.xlsx) com as colunas: Concessionária, Data de Recebimento, Ordem de Serviço, Código Hidrômetro, Nº Série Hidrômetro, ID DE DEVOLUÇÃO, Observações.</p>
+      <p class="muted" style="margin-bottom:0">A base <strong>nunca é apagada automaticamente</strong>. Registros ausentes no Excel serão marcados como inativos somente após sua confirmação.</p>
+    </div>
+
+    <div class="field">
+      <label for="file-input">Arquivo da planilha</label>
+      <input type="file" id="file-input" accept=".xlsx,.xls,.csv" />
+    </div>
+
+    <div id="result-area"></div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script src="../js/lib/xlsx.full.min.js"></script>
+  <script type="module">
+    import { requireAuth, fetchAllHidrometros, confirmImportacao } from './js/supabase-client.js';
+    import { parseAndCompareWorkbook, buildConfirmPayload } from './js/import-parser.js';
+    import { escapeHTML } from './js/utils-import.js';
+
+    const session = await requireAuth();
+    if (!session) throw new Error('Não autenticado');
+
+    /** @type {any|null} */
+    let parsedResult = null;
+    let parsedFileName = '';
+
+    const resultArea = document.getElementById('result-area');
+
+    function showToast(msg) {
+      const el = document.getElementById('toast');
+      el.textContent = msg;
+      el.style.display = 'block';
+      setTimeout(() => (el.style.display = 'none'), 2800);
+    }
+
+    document.getElementById('file-input').addEventListener('change', async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      parsedFileName = file.name;
+      parsedResult = null;
+      resultArea.innerHTML = '<div class="loading">Lendo planilha e comparando com o banco…</div>';
+
+      try {
+        const [buffer, existentes] = await Promise.all([file.arrayBuffer(), fetchAllHidrometros()]);
+        parsedResult = parseAndCompareWorkbook(buffer, existentes);
+        renderPreview();
+      } catch (err) {
+        resultArea.innerHTML = `<div class="card error-box"><strong>Erro ao processar.</strong><p>${escapeHTML(err.message || String(err))}</p></div>`;
+      }
+    });
+
+    function renderPreview() {
+      const r = parsedResult;
+      if (!r) return;
+
+      if (!r.headerOk) {
+        resultArea.innerHTML = `
+          <div class="card error-box">
+            <strong>A planilha não tem o formato esperado.</strong>
+            <ul>${r.headerErrors.map((e) => `<li>${escapeHTML(e)}</li>`).join('')}</ul>
+          </div>`;
+        return;
+      }
+
+      const podeConfirmar = r.novos.length + r.atualizados.length + r.inalterados.length > 0 || r.removidos.length > 0;
+
+      resultArea.innerHTML = `
+        <div class="card">
+          <h2>ATUALIZAÇÃO DA BASE</h2>
+          <div class="summary-line"><span>Arquivo</span><strong>${escapeHTML(parsedFileName)}</strong></div>
+          <div class="summary-line"><span>Registros no arquivo</span><strong>${r.totalLinhas.toLocaleString('pt-BR')}</strong></div>
+          <div class="summary-line"><span>Válidos (sem erro)</span><strong>${r.registrosValidos.toLocaleString('pt-BR')}</strong></div>
+          <div class="summary-line"><span>Novos</span><strong style="color:var(--success)">${r.novos.length.toLocaleString('pt-BR')}</strong></div>
+          <div class="summary-line"><span>Atualizados</span><strong style="color:var(--primary)">${r.atualizados.length.toLocaleString('pt-BR')}</strong></div>
+          <div class="summary-line"><span>Sem alteração</span><strong>${r.inalterados.length.toLocaleString('pt-BR')}</strong></div>
+          <div class="summary-line"><span>Possíveis removidos</span><strong style="color:var(--warning)">${r.removidos.length.toLocaleString('pt-BR')}</strong></div>
+          <div class="summary-line"><span>Duplicados na planilha</span><strong>${r.duplicados.toLocaleString('pt-BR')}</strong></div>
+          <div class="summary-line"><span>Erros</span><strong style="color:var(--danger)">${r.erros.length.toLocaleString('pt-BR')}</strong></div>
+        </div>
+
+        ${r.erros.length ? errosCard(r.erros) : ''}
+        ${r.removidos.length ? removidosCard(r.removidos) : ''}
+
+        <div class="btn-grid">
+          <button class="btn" id="btn-confirmar" ${podeConfirmar ? '' : 'disabled'}>Confirmar Atualização</button>
+          <button class="btn btn-outline" id="btn-cancelar">Cancelar</button>
+        </div>
+      `;
+
+      document.getElementById('btn-confirmar')?.addEventListener('click', onConfirm);
+      document.getElementById('btn-cancelar')?.addEventListener('click', () => location.reload());
+    }
+
+    function errosCard(erros) {
+      const primeiros = erros.slice(0, 30);
+      return `
+        <div class="card error-box">
+          <h2>Linhas com erro (não serão importadas)</h2>
+          ${primeiros
+            .map(
+              (e) =>
+                `<div style="font-size:.9rem;margin-bottom:6px"><strong>Linha ${e.linha}</strong> · ${escapeHTML(e.campo)}<br><span class="muted">${escapeHTML(e.problema)}</span></div>`
+            )
+            .join('')}
+          ${erros.length > primeiros.length ? `<p class="muted">+ ${erros.length - primeiros.length} outra(s) linha(s).</p>` : ''}
+        </div>`;
+    }
+
+    function removidosCard(removidos) {
+      const primeiros = removidos.slice(0, 10);
+      return `
+        <div class="card" style="border-color:var(--warning)">
+          <h2>Possíveis removidos (${removidos.length})</h2>
+          <p class="muted">Estes registros estão ativos no banco mas não aparecem no Excel. Serão marcados como <strong>inativos</strong> se você confirmar.</p>
+          ${primeiros
+            .map(
+              (h) =>
+                `<div style="font-size:.88rem;margin-bottom:4px">Série ${escapeHTML(h.numero_serie_hidrometro)} · Dev. ${escapeHTML(h.id_devolucao)} · OS ${escapeHTML(h.ordem_servico)}</div>`
+            )
+            .join('')}
+          ${removidos.length > primeiros.length ? `<p class="muted">+ ${removidos.length - primeiros.length} outro(s).</p>` : ''}
+        </div>`;
+    }
+
+    async function onConfirm() {
+      if (!parsedResult) return;
+
+      const msg = [
+        `${parsedResult.novos.length} novo(s)`,
+        `${parsedResult.atualizados.length} atualizado(s)`,
+        `${parsedResult.inalterados.length} inalterado(s)`,
+        parsedResult.removidos.length ? `${parsedResult.removidos.length} marcado(s) como inativo(s)` : null,
+      ]
+        .filter(Boolean)
+        .join(', ');
+
+      if (!confirm(`Confirmar atualização?\n\n${msg}\n\nEsta ação será registrada no histórico.`)) return;
+
+      const btn = document.getElementById('btn-confirmar');
+      if (btn) btn.disabled = true;
+
+      try {
+        const payload = buildConfirmPayload(parsedResult, parsedFileName);
+        await confirmImportacao(payload);
+        showToast('Base atualizada com sucesso!');
+        setTimeout(() => (location.href = './index.html'), 1200);
+      } catch (err) {
+        showToast('Erro ao confirmar: ' + (err.message || err));
+        if (btn) btn.disabled = false;
+      }
+    }
+  </script>
+</body>
+</html>

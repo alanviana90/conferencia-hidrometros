@@ -1,17 +1,20 @@
 // @ts-check
 import { dbGetAll, STORES } from '../db.js';
-import { topbarHTML, openOverlay, closeOverlay } from '../ui.js';
+import { topbarHTML, openOverlay, closeOverlay, showToast } from '../ui.js';
 import { debounce, normalizeText, escapeHTML, formatDateBR } from '../utils.js';
+import { createHidrometro, canEditBase } from '../services/hidrometros-service.js';
 
 const LIMITE_RESULTADOS = 200;
 
 /** @param {HTMLElement} container */
 export async function render(container) {
+  const editavel = await canEditBase();
   container.innerHTML = `
     <div class="screen">
       ${topbarHTML('Base de Hidrômetros', '#/')}
       <div class="content stack">
-        <input type="search" id="busca" placeholder="Buscar por série, código, OS ou devolução…" />
+        ${editavel ? '<button class="btn btn-primary" id="btn-novo">➕ Novo Hidrômetro</button>' : '<p class="muted">Para cadastrar ou alterar lotes, edite a planilha e atualize a base nas Configurações.</p><a class="btn btn-outline" href="#/config">Atualizar base</a>'}
+        <input type="search" id="busca" placeholder="Buscar por série, lote, código, OS ou devolução…" />
         <div id="resultado" class="stack"></div>
       </div>
     </div>
@@ -30,11 +33,50 @@ export async function render(container) {
         return;
       }
       const encontrados = base.filter(
-        (r) => r.numeroSerieNorm.includes(q) || normalizeText(r.codigoHidrometro).includes(q) || normalizeText(r.ordemServico).includes(q) || normalizeText(r.idDevolucao).includes(q)
+        (r) =>
+          r.numeroSerieNorm.includes(q) ||
+          normalizeText(r.lote).includes(q) ||
+          normalizeText(r.codigoHidrometro).includes(q) ||
+          normalizeText(r.ordemServico).includes(q) ||
+          normalizeText(r.idDevolucao).includes(q)
       );
       renderResultado(resultado, encontrados);
     }, 200)
   );
+  container.querySelector('#btn-novo')?.addEventListener('click', () => abrirNovoHidrometro(container));
+}
+
+/** Cadastro disponível também quando a base ainda está vazia. */
+function abrirNovoHidrometro(container) {
+  const { panel } = openOverlay(`
+    <h2 style="margin-top:0">Novo Hidrômetro</h2>
+    <div class="field"><label for="novo-serie">Número de série</label><input id="novo-serie" type="text" required /></div>
+    <div class="field"><label for="novo-lote">Lote</label><input id="novo-lote" type="text" /></div>
+    <div class="field"><label for="novo-devolucao">ID de devolução (opcional)</label><input id="novo-devolucao" type="text" /></div>
+    <div class="field"><label for="novo-os">Ordem de serviço (opcional)</label><input id="novo-os" type="text" /></div>
+    <div class="field"><label for="novo-obs">Observações (opcional)</label><textarea id="novo-obs" rows="2"></textarea></div>
+    <div class="stack"><button class="btn btn-primary" id="novo-salvar">Salvar hidrômetro</button><button class="btn btn-outline" id="novo-cancelar">Cancelar</button></div>
+  `);
+  panel.querySelector('#novo-cancelar')?.addEventListener('click', closeOverlay);
+  panel.querySelector('#novo-salvar')?.addEventListener('click', async (event) => {
+    const btn = /** @type {HTMLButtonElement} */ (event.currentTarget);
+    btn.disabled = true;
+    try {
+      await createHidrometro({
+        numeroSerie: /** @type {HTMLInputElement} */ (panel.querySelector('#novo-serie')).value,
+        lote: /** @type {HTMLInputElement} */ (panel.querySelector('#novo-lote')).value,
+        idDevolucao: /** @type {HTMLInputElement} */ (panel.querySelector('#novo-devolucao')).value,
+        ordemServico: /** @type {HTMLInputElement} */ (panel.querySelector('#novo-os')).value,
+        observacoes: /** @type {HTMLTextAreaElement} */ (panel.querySelector('#novo-obs')).value,
+      });
+      closeOverlay();
+      showToast('Hidrômetro salvo no Supabase.');
+      await render(container);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Erro ao cadastrar o hidrômetro.');
+      btn.disabled = false;
+    }
+  });
 }
 
 /** @param {HTMLElement} resultado @param {any[]} encontrados */
@@ -52,6 +94,7 @@ function renderResultado(resultado, encontrados) {
     <div class="list-item" data-id="${escapeHTML(h.id)}" role="button">
       <div class="main">
         <div class="title">${escapeHTML(h.numeroSerie)} ${h.temSerieDuplicada ? '<span class="badge warning">série duplicada</span>' : ''}</div>
+        ${h.lote ? `<div class="subtitle">Lote: ${escapeHTML(h.lote)}</div>` : ''}
       </div>
       <div class="chevron">›</div>
     </div>`
@@ -76,6 +119,7 @@ function abrirDetalhe(h) {
       <div><div class="k">Código</div><div class="v">${escapeHTML(h.codigoHidrometro)}</div></div>
       <div><div class="k">Ordem de Serviço</div><div class="v">${escapeHTML(h.ordemServico)}</div></div>
       <div><div class="k">ID Devolução</div><div class="v">${escapeHTML(h.idDevolucao)}</div></div>
+      <div><div class="k">Lote</div><div class="v">${escapeHTML(h.lote || '—')}</div></div>
       <div><div class="k">Data de Recebimento</div><div class="v">${formatDateBR(h.dataRecebimento)}</div></div>
       <div class="full"><div class="k">Concessionária</div><div class="v">${escapeHTML(h.concessionaria)}</div></div>
       ${h.observacoes ? `<div class="full"><div class="k">Observações</div><div class="v">${escapeHTML(h.observacoes)}</div></div>` : ''}

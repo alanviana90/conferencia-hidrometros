@@ -3,6 +3,8 @@
  * Camada de acesso ao IndexedDB. Banco local do app — tudo roda offline.
  * Nenhuma outra parte do app deve chamar `indexedDB` diretamente, só este módulo.
  */
+import { fetchHidrometros } from './services/hidrometros-service.js';
+
 
 export const DB_NAME = 'hidrometros-db';
 export const DB_VERSION = 1;
@@ -111,6 +113,7 @@ export async function dbGet(storeName, key) {
  * @param {string} storeName
  */
 export async function dbGetAll(storeName) {
+  if (storeName === STORES.HIDROMETROS) return fetchHidrometros();
   const db = await openDatabase();
   const tx = db.transaction(storeName, 'readonly');
   return promisifyRequest(tx.objectStore(storeName).getAll());
@@ -167,6 +170,7 @@ export async function dbDelete(storeName, key) {
  * @param {string} storeName
  */
 export async function dbCount(storeName) {
+  if (storeName === STORES.HIDROMETROS) return (await fetchHidrometros()).length;
   const db = await openDatabase();
   const tx = db.transaction(storeName, 'readonly');
   return promisifyRequest(tx.objectStore(storeName).count());

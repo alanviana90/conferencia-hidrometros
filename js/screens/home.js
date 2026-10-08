@@ -1,14 +1,15 @@
 // @ts-check
-import { dbGetAll, STORES, configGet } from '../db.js';
+import { configGet } from '../db.js';
 import { getGlobalStats, listConferencias } from '../services/conferencia-service.js';
 import { formatDateTimeBR, escapeHTML } from '../utils.js';
 
 /** @param {HTMLElement} container */
 export async function render(container) {
-  const [stats, conferencias, operador] = await Promise.all([
+  const [stats, conferencias, operador, editavel] = await Promise.all([
     getGlobalStats(),
     listConferencias(),
     configGet('operador', ''),
+    configGet('fonteBase', 'sheets'),
   ]);
 
   const emAndamento = conferencias.filter((c) => c.status === 'em_andamento');
@@ -48,20 +49,21 @@ export async function render(container) {
           </a>
           <a class="btn btn-outline btn-lg" href="#/historico">🕘 Histórico</a>
           <a class="btn btn-outline btn-lg" href="#/base">📋 Base de Hidrômetros</a>
+          ${editavel === 'supabase' ? '<a class="btn btn-outline" href="./admin/">Administrar Supabase</a>' : '<div class="muted center">☁️ Base do Google Sheets</div><a class="btn btn-outline" href="#/config">Atualizar base</a>'}
         </div>
 
-        <a class="btn btn-sm" style="margin-top:8px" href="#/importar">⬆️ Atualizar Base (importar planilha)</a>
       </div>
     </div>
   `;
+
 }
 
 function emptyBaseCard() {
   return `
     <div class="card" style="border-color:var(--warning)">
       <strong>A base de hidrômetros está vazia.</strong>
-      <p class="muted">Importe a planilha antes de iniciar uma conferência.</p>
-      <a class="btn btn-primary" href="#/importar">Importar planilha agora</a>
+      <p class="muted">Não há registros na fonte configurada. Verifique a planilha e atualize a base.</p>
+      <a class="btn btn-primary" href="#/config">Configurar base</a>
     </div>
   `;
 }

@@ -1,7 +1,7 @@
 {
   "name": "Conferência de Hidrômetros",
   "short_name": "Hidrômetros",
-  "description": "Conferência física de hidrômetros em sucata no almoxarifado, com funcionamento 100% offline.",
+  "description": "Conferência física de hidrômetros em sucata com base centralizada no Supabase.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

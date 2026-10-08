@@ -19,7 +19,7 @@ export async function render(container) {
   if (!base.length) {
     container.innerHTML = `
       <div class="screen">${topbarHTML('Nova Conferência', '#/')}
-      <div class="content"><div class="card"><strong>A base está vazia.</strong><p class="muted">Importe a planilha antes de criar uma conferência.</p><a class="btn btn-primary" href="#/importar">Importar planilha</a></div></div></div>`;
+      <div class="content"><div class="card"><strong>A base está vazia.</strong><p class="muted">Não há hidrômetros disponíveis no Supabase.</p><a class="btn btn-primary" href="#/">Voltar ao início</a></div></div></div>`;
     return;
   }
 

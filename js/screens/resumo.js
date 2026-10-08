@@ -41,6 +41,7 @@ export async function render(container, params) {
           <div class="summary-line"><span>Não encontrados</span><strong style="color:var(--danger)">${stats.naoEncontrados.toLocaleString('pt-BR')}</strong></div>
           ${stats.foraDoFiltro ? `<div class="summary-line"><span>Fora do filtro (registrados à parte)</span><strong>${stats.foraDoFiltro}</strong></div>` : ''}
           ${stats.serieInexistente ? `<div class="summary-line"><span>Séries digitadas sem correspondência</span><strong>${stats.serieInexistente}</strong></div>` : ''}
+          ${stats.excedentes ? `<div class="summary-line"><span>⚠️ Excedentes adicionados (fora da base recebida)</span><strong>${stats.excedentes}</strong></div>` : ''}
           <div class="summary-line"><span>Operador</span><strong>${escapeHTML(conferencia.operador)}</strong></div>
           <div class="summary-line"><span>Iniciada em</span><strong>${formatDateTimeBR(conferencia.createdAt)}</strong></div>
           ${conferencia.finalizedAt ? `<div class="summary-line"><span>Finalizada em</span><strong>${formatDateTimeBR(conferencia.finalizedAt)}</strong></div>` : ''}
