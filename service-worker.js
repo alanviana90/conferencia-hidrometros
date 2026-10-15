@@ -1,7 +1,8 @@
 // Service Worker da interface. A casca do app fica em cache, mas a base de
 // hidrômetros é consultada no Google Sheets e requer conexão.
 
-const CACHE_NAME = 'hidrometros-cache-v10';
+const RELEASE = 'v11';
+const CACHE_NAME = 'hidrometros-cache-' + RELEASE;
 
 const PRECACHE_URLS = [
   './',
@@ -37,7 +38,16 @@ const PRECACHE_URLS = [
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(PRECACHE_URLS)).then(() => self.skipWaiting())
+    caches.open(CACHE_NAME).then(async cache => {
+      // Monta a versão inteira antes de ativar, sem reutilizar JS do cache HTTP.
+      await Promise.all(PRECACHE_URLS.map(async path => {
+        const url = new URL(path, self.registration.scope);
+        url.searchParams.set('release', RELEASE);
+        const response = await fetch(url, { cache: 'reload' });
+        if (!response.ok) throw new Error('Falha ao atualizar ' + path);
+        await cache.put(new URL(path, self.registration.scope).href, response);
+      }));
+    }).then(() => self.skipWaiting())
   );
 });
 
@@ -45,7 +55,7 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches
       .keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k))))
+      .then((keys) => Promise.all(keys.filter((k) => k.startsWith('hidrometros-cache-') && k !== CACHE_NAME).map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
@@ -55,20 +65,13 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET' || new URL(request.url).origin !== location.origin) return;
 
   event.respondWith(
-    caches.match(request).then((cached) => {
-      const network = fetch(request)
-        .then((response) => {
-          if (response && response.ok) {
-            const clone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
-          }
-          return response;
-        })
-        .catch(() => null);
-
+    caches.open(CACHE_NAME).then(async cache => {
+      // A página de reparo funciona mesmo quando o aplicativo está desatualizado.
+      if (new URL(request.url).pathname.endsWith('/atualizar.html')) return fetch(request, { cache: 'reload' });
+      const cached = await cache.match(request, { ignoreSearch: true });
       if (cached) return cached;
-
-      return network.then((response) => response || caches.match('./index.html'));
+      // Cada versão mantém um conjunto estável de módulos. JS ausente não recebe HTML.
+      return fetch(request);
     })
   );
 });

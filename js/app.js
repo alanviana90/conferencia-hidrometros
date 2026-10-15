@@ -76,7 +76,7 @@ async function renderRoute() {
       await mod.render(app, params, search);
     } catch (err) {
       console.error(err);
-      app.innerHTML = `<div class="content"><div class="card"><strong>Erro ao carregar a tela.</strong><p class="muted">${escapeHTML(err instanceof Error ? err.message : String(err))}</p><a class="btn btn-primary" href="#/config">Configurar fonte de dados</a><a class="btn btn-outline" href="#/">Voltar ao início</a></div></div>`;
+      app.innerHTML = `<div class="content"><div class="card"><strong>Erro ao carregar a tela.</strong><p class="muted">${escapeHTML(err instanceof Error ? err.message : String(err))}</p><a class="btn btn-primary" href="./atualizar.html">Atualizar aplicativo e preservar conferências</a><a class="btn btn-outline" href="#/config">Configurar fonte de dados</a><a class="btn btn-outline" href="#/">Voltar ao início</a></div></div>`;
     }
     return;
   }
@@ -87,7 +87,13 @@ async function renderRoute() {
 async function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
   try {
-    await navigator.serviceWorker.register('./service-worker.js');
+    let controller = navigator.serviceWorker.controller;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (controller) location.reload();
+      controller = navigator.serviceWorker.controller;
+    });
+    const registration = await navigator.serviceWorker.register('./service-worker.js', { updateViaCache: 'none' });
+    registration.update().catch(() => {});
   } catch (err) {
     // Falha ao registrar SW (ex.: rodando em HTTP puro na rede local) não deve
     // impedir o app de funcionar — apenas o cache da interface fica indisponível.
