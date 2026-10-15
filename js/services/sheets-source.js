@@ -31,7 +31,8 @@ export function recordsFromRows(rows) {
     dataRecebimento: ['Data de Recebimento', 'data_recebimento'],
     ordemServico: ['Ordem de Serviço', 'ordem_servico'],
     codigoHidrometro: ['Código Hidrômetro', 'codigo_hidrometro'],
-    numeroSerie: ['Nº Série Hidrômetro', 'N° Série Hidrômetro', 'Série Hidrômetro', 'numero_serie_hidrometro', 'numeroSerie'],
+    descricao: ['Modelo HD Substituido', 'Descrição', 'Descrição do Hidrômetro', 'Descrição Hidrômetro', 'descricao_hidrometro', 'Descrição do Material'],
+    numeroSerie: ['HD Substituído', 'Nº Série Hidrômetro', 'N° Série Hidrômetro', 'Série Hidrômetro', 'numero_serie_hidrometro', 'numeroSerie'],
     idDevolucao: ['ID DE DEVOLUÇÃO', 'id_devolucao'],
     observacoes: ['Observações'], lote: ['Lote'], ativo: ['Ativo'], id: ['ID'], origem: ['Origem'],
   };

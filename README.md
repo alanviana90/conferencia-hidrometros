@@ -10,7 +10,11 @@ A aba precisa estar publicada em CSV ou permitir leitura pelo link. Para publica
 
 Cabeçalhos: `Concessionária`, `Data de Recebimento`, `Ordem de Serviço`, `Código Hidrômetro`, `Nº Série Hidrômetro`, `ID DE DEVOLUÇÃO`, `Observações` e `Lote`. Série, devolução e OS são colunas obrigatórias. Formate séries, códigos, OS e devoluções como **Texto simples** no Sheets para preservar zeros à esquerda.
 
-O fluxo permite digitar uma série, conferir sua presença na base recebida e atribuir o **lote / lacre**. Informe o lacre atual na tela da conferência: ele é sugerido nas próximas leituras. A contagem considera séries físicas diferentes, aceita até **20 unidades por saco** e exige outro lacre para a 21ª unidade. A contagem se aplica ao fluxo de sacos de 3/4; o app não identifica o diâmetro a partir da série.
+A coluna **Modelo HD Substituido** no Sheets é lida como descrição (também aceita **Descrição** e **Descrição do Hidrômetro**). Atualize a base após editar a planilha. O app identifica polegadas explícitas, como `3/4"`, `1 polegada`, `1.1/2"`, `1 1/2 pol` e `2"`. Vazão em m³/h sozinha não determina o diâmetro: nesses casos, ou quando a descrição estiver vazia, selecione o tamanho manualmente na conferência.
+
+O fluxo aceita **20 peças de 3/4 por saco** e **10 peças de 1 polegada por saco**, sem misturar tamanhos no mesmo lacre. Hidrômetros acima de 1 polegada ficam **fora do saco, sem lacre**. Confirme o acondicionamento na tela de resultado; o lacre atual continua sugerido para os sacos. O relatório inclui descrição, capacidade, situação de cada saco e uma aba separada para os maiores. Registros antigos são preservados; tamanhos ausentes podem ser confirmados manualmente.
+
+Atualize também a implantação do Apps Script com a versão de `google-apps-script/Code.gs` deste projeto para permitir limpar o lacre de hidrômetros maiores e gravar a descrição dos excedentes. Ao confirmar um maior que tinha lacre na base, o app envia o campo Lote vazio e mantém o lacre do saco atual disponível para as próximas peças.
 
 Se a série não constar na base, use **Adicionar excedente**. O item recebe o status **EXCEDENTE — ADICIONADO NA CONFERÊNCIA**, preservado no histórico e no relatório, mesmo após entrar na planilha. O XLSX inclui o lacre, uma coluna de destaque, uma aba **Excedentes adicionados** e uma aba **Lotes e lacres** com as quantidades. Ao finalizar, os esperados ainda pendentes são classificados como faltantes físicos.
 

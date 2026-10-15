@@ -1,5 +1,7 @@
 # Ativar a gravação no Google Sheets
 
+Para atualizar uma implantação existente, substitua `Code.gs`, salve e use **Implantar → Gerenciar implantações → Editar → Nova versão → Implantar**. A versão atual grava a descrição dos excedentes e aceita limpar o campo `Lote` ao confirmar hidrômetros maiores fora do saco, sem lacre. A URL existente pode ser mantida.
+
 1. Na planilha, abra **Extensões → Apps Script**. Cole o conteúdo de `Code.gs` no editor e salve.
 2. Em **Configurações do projeto → Propriedades do script**, adicione `ACCESS_TOKEN` com uma chave longa escolhida por você. Essa chave será informada somente nos aparelhos autorizados, nunca nas células da planilha.
 3. Clique em **Implantar → Nova implantação → Aplicativo da Web**. Execute como sua conta e permita acesso a **Qualquer pessoa**. A integração exige a chave em cada gravação. Autorize o acesso solicitado pelo Google. Se essa opção estiver bloqueada pela sua organização, será necessário adequar a autenticação à política da empresa.

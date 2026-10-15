@@ -3,6 +3,7 @@ import { dbGetAll, STORES } from '../db.js';
 import { getConferencia, getItensDaConferencia } from '../services/conferencia-service.js';
 import { topbarHTML, openOverlay, closeOverlay } from '../ui.js';
 import { escapeHTML, formatDateBR, formatDateTimeBR } from '../utils.js';
+import { EMBALAGENS, embalagemDoRegistro } from '../services/embalagem.js';
 
 let filtroAtual = 'TODOS';
 
@@ -68,7 +69,7 @@ function renderLista(container, resolvidos) {
     <div class="list-item" data-id="${escapeHTML(item.id)}" role="button">
       <div class="main">
         <div class="title">${escapeHTML(hidrometro.numeroSerie)}</div>
-        <div class="subtitle">${formatDateTimeBR(item.timestamp)} · Lacre: ${escapeHTML(item.lote || 'não informado')}</div>
+        <div class="subtitle">${formatDateTimeBR(item.timestamp)} · ${embalagemDoRegistro(hidrometro) === 'maior' ? 'Fora do saco, sem lacre' : 'Lacre: ' + escapeHTML(item.lote || 'não informado')}</div>
       </div>
       <span class="badge ${item.status === 'ADICIONADO' ? 'warning' : item.status === 'ENCONTRADO' ? 'success' : 'danger'}">${item.status === 'ADICIONADO' ? 'Excedente adicionado' : item.status === 'ENCONTRADO' ? 'Encontrado' : 'Não encontrado'}</span>
     </div>`
@@ -95,6 +96,7 @@ function abrirDetalhe({ item, hidrometro }) {
       <div><div class="k">Data de Recebimento</div><div class="v">${formatDateBR(hidrometro.dataRecebimento)}</div></div>
       <div><div class="k">Status</div><div class="v">${item.status === 'ADICIONADO' ? 'EXCEDENTE — ADICIONADO NA CONFERÊNCIA' : item.status === 'ENCONTRADO' ? 'Encontrado' : 'Não encontrado'}</div></div>
       <div><div class="k">Lote / Lacre</div><div class="v">${escapeHTML(item.lote || 'não informado')}</div></div>
+      <div class="full"><div class="k">Descrição / acondicionamento</div><div class="v">${escapeHTML(hidrometro.descricao || '')} · ${escapeHTML(EMBALAGENS[embalagemDoRegistro(hidrometro)]?.label || 'Tamanho não informado')}</div></div>
       <div><div class="k">Registrado em</div><div class="v">${formatDateTimeBR(item.timestamp)}</div></div>
     </div>
     <button class="btn btn-outline" id="btn-fechar">Fechar</button>

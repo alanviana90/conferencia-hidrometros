@@ -35,7 +35,7 @@ export async function render(container) {
       const encontrados = base.filter(
         (r) =>
           r.numeroSerieNorm.includes(q) ||
-          normalizeText(r.lote).includes(q) ||
+          normalizeText(r.lote).includes(q) || normalizeText(r.descricao).includes(q) ||
           normalizeText(r.codigoHidrometro).includes(q) ||
           normalizeText(r.ordemServico).includes(q) ||
           normalizeText(r.idDevolucao).includes(q)
@@ -52,6 +52,7 @@ function abrirNovoHidrometro(container) {
     <h2 style="margin-top:0">Novo Hidrômetro</h2>
     <div class="field"><label for="novo-serie">Número de série</label><input id="novo-serie" type="text" required /></div>
     <div class="field"><label for="novo-lote">Lote</label><input id="novo-lote" type="text" /></div>
+    <div class="field"><label for="novo-descricao">Descrição do hidrômetro</label><input id="novo-descricao" type="text" /></div>
     <div class="field"><label for="novo-devolucao">ID de devolução (opcional)</label><input id="novo-devolucao" type="text" /></div>
     <div class="field"><label for="novo-os">Ordem de serviço (opcional)</label><input id="novo-os" type="text" /></div>
     <div class="field"><label for="novo-obs">Observações (opcional)</label><textarea id="novo-obs" rows="2"></textarea></div>
@@ -65,6 +66,7 @@ function abrirNovoHidrometro(container) {
       await createHidrometro({
         numeroSerie: /** @type {HTMLInputElement} */ (panel.querySelector('#novo-serie')).value,
         lote: /** @type {HTMLInputElement} */ (panel.querySelector('#novo-lote')).value,
+        descricao: panel.querySelector('#novo-descricao').value.trim(),
         idDevolucao: /** @type {HTMLInputElement} */ (panel.querySelector('#novo-devolucao')).value,
         ordemServico: /** @type {HTMLInputElement} */ (panel.querySelector('#novo-os')).value,
         observacoes: /** @type {HTMLTextAreaElement} */ (panel.querySelector('#novo-obs')).value,
@@ -120,6 +122,7 @@ function abrirDetalhe(h) {
       <div><div class="k">Ordem de Serviço</div><div class="v">${escapeHTML(h.ordemServico)}</div></div>
       <div><div class="k">ID Devolução</div><div class="v">${escapeHTML(h.idDevolucao)}</div></div>
       <div><div class="k">Lote</div><div class="v">${escapeHTML(h.lote || '—')}</div></div>
+      <div class="full"><div class="k">Descrição</div><div class="v">${escapeHTML(h.descricao || '—')}</div></div>
       <div><div class="k">Data de Recebimento</div><div class="v">${formatDateBR(h.dataRecebimento)}</div></div>
       <div class="full"><div class="k">Concessionária</div><div class="v">${escapeHTML(h.concessionaria)}</div></div>
       ${h.observacoes ? `<div class="full"><div class="k">Observações</div><div class="v">${escapeHTML(h.observacoes)}</div></div>` : ''}

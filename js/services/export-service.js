@@ -6,6 +6,13 @@
 import { dbGetAll, STORES } from '../db.js';
 import { getConferencia, getItensDaConferencia } from './conferencia-service.js';
 import { formatDateBR, formatDateTimeBR } from '../utils.js';
+import { EMBALAGENS, embalagemDoRegistro } from './embalagem.js';
+
+function dadosEmbalagem(record) {
+  const kind = embalagemDoRegistro(record);
+  return { 'Descrição': record?.descricao || '', 'Acondicionamento': EMBALAGENS[kind]?.label || 'Tamanho não informado',
+    'Capacidade do saco': EMBALAGENS[kind]?.capacidade ?? '' };
+}
 
 const STATUS_LABEL = {
   ENCONTRADO: 'ENCONTRADO',
@@ -46,6 +53,7 @@ export async function buildRelatorioLinhas(conferenciaId) {
     if (!hidrometro) continue;
     linhas.push({
       'Número de Série': hidrometro.numeroSerie,
+      ...dadosEmbalagem(hidrometro),
       'Lote / Lacre': item?.lote ?? hidrometro.lote ?? '',
       'Adicionado durante a conferência': 'Não',
       Código: hidrometro.codigoHidrometro,
@@ -63,6 +71,7 @@ export async function buildRelatorioLinhas(conferenciaId) {
     const hidrometro = item.hidrometroSnapshot || (item.hidrometroId ? baseById.get(item.hidrometroId) : null);
     linhas.push({
       'Número de Série': item.numeroSerieDigitado,
+      ...dadosEmbalagem(hidrometro),
       'Lote / Lacre': item.lote ?? hidrometro?.lote ?? '',
       'Adicionado durante a conferência': item.adicionadoNaConferencia || item.status === 'ADICIONADO' ? 'SIM — EXCEDENTE' : 'Não',
       Código: hidrometro ? hidrometro.codigoHidrometro : '',
@@ -98,11 +107,18 @@ export async function exportarConferenciaXLSX(conferenciaId) {
   for (const row of linhas) {
     if (!row['Lote / Lacre'] || !['ENCONTRADO', 'ADICIONADO', 'FORA_DO_FILTRO'].some(status => row.Status === STATUS_LABEL[status])) continue;
     const lote = row['Lote / Lacre'];
-    if (!lotes.has(lote)) lotes.set(lote, new Set());
-    lotes.get(lote).add(row['Número de Série']);
+    if (!lotes.has(lote)) lotes.set(lote, { series: new Set(), capacities: new Set() });
+    lotes.get(lote).series.add(row['Número de Série']);
+    lotes.get(lote).capacities.add(row['Capacidade do saco']);
   }
-  const sacos = [...lotes].map(([lote, series]) => ({ 'Lote / Lacre': lote, 'Quantidade de hidrômetros': series.size, 'Situação do saco': series.size === 20 ? '20 UNIDADES' : series.size < 20 ? 'INCOMPLETO' : 'ACIMA DE 20' }));
+  const sacos = [...lotes].map(([lote, { series, capacities }]) => {
+    const capacity = capacities.size === 1 ? [...capacities][0] : '';
+    return { 'Lote / Lacre': lote, 'Quantidade de hidrômetros': series.size, 'Capacidade do saco': capacity,
+      'Situação do saco': !capacity ? 'VERIFICAR TAMANHOS' : series.size === capacity ? `${capacity} UNIDADES` : series.size < capacity ? 'INCOMPLETO' : `ACIMA DE ${capacity}` };
+  });
   if (sacos.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sacos), 'Lotes e lacres');
+  const foraDoSaco = linhas.filter(r => r['Capacidade do saco'] === 0 && ['ENCONTRADO', 'ADICIONADO', 'FORA_DO_FILTRO'].some(status => r.Status === STATUS_LABEL[status]));
+  if (foraDoSaco.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(foraDoSaco), 'Fora do saco');
 
   const nomeArquivo = `conferencia_${slug(conferencia.nome)}_${new Date().toISOString().slice(0, 10)}.xlsx`;
   XLSX.writeFile(wb, nomeArquivo);

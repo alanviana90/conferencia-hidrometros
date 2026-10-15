@@ -18,6 +18,7 @@ import { topbarHTML, showToast, confirmDialog, openOverlay, closeOverlay } from 
 import { escapeHTML, formatDateTimeBR } from '../utils.js';
 import { syncChanges } from '../services/sheets-write.js';
 import { createHidrometro, updateLoteByNumeroSerie } from '../services/hidrometros-service.js';
+import { EMBALAGENS, embalagemDoRegistro, identificarEmbalagem, validarSaco } from '../services/embalagem.js';
 
 /** @type {any} */
 let conferencia = null;
@@ -76,7 +77,8 @@ export async function render(container, params) {
         </div>
 
         <div class="card">
-          <div class="field"><label for="lacre-atual">Lote / número do lacre do saco (3/4)</label><input type="text" id="lacre-atual" value="${escapeHTML(conferencia.loteAtual || '')}" placeholder="Ex.: 000123" autocomplete="off" /></div>
+          <div class="field"><label for="lacre-atual">Lote / número do lacre do saco atual</label><input type="text" id="lacre-atual" value="${escapeHTML(conferencia.loteAtual || '')}" placeholder="Ex.: 000123" autocomplete="off" /></div>
+          <p class="muted">3/4: 20 peças por saco · 1 polegada: 10 peças · Maiores: fora do saco, sem lacre.</p>
           <p class="muted" id="saco-contagem"></p>
           <form id="scan-form">
             <label for="serie-input">Digite ou escaneie o número de série</label>
@@ -132,7 +134,9 @@ function updateSaco() {
   if (!el) return;
   const lacre = conferencia.loteAtual;
   const count = lacre ? sacoCount(lacre) : 0;
-  el.textContent = lacre ? `Lacre ${lacre}: ${count}/20 hidrômetros${count >= 20 ? ' — saco completo, informe o próximo lacre.' : ''}` : 'Informe o lacre do saco antes de atribuir os hidrômetros.';
+  const member = itens.find(i => i.lote === lacre && embalagemDoRegistro(i.hidrometroSnapshot));
+  const capacity = EMBALAGENS[embalagemDoRegistro(member?.hidrometroSnapshot)]?.capacidade;
+  el.textContent = lacre ? `Lacre ${lacre}: ${count}${capacity ? '/' + capacity : ''} hidrômetros${capacity && count >= capacity ? ' — saco completo, informe o próximo lacre.' : ''}` : 'Informe o lacre para os sacos. Hidrômetros maiores que 1 polegada ficam sem lacre.';
 }
 function focusInput() {
   const input = /** @type {HTMLInputElement|null} */ (containerRef?.querySelector('#serie-input'));
@@ -304,18 +308,23 @@ async function handleDecision(decision, serieDigitada) {
 
 /** Resultado com lacre atribuído e preservado no registro desta conferência. */
 async function showResultadoEncontrado(hidrometro) {
+  const existing = itens.find(i => i.hidrometroId === hidrometro.id);
+  const initial = embalagemDoRegistro(existing?.hidrometroSnapshot) || embalagemDoRegistro(hidrometro);
   const { panel } = openOverlay(`
     <div class="result-badge success">${itens.some(i => i.hidrometroId === hidrometro.id && i.status === 'ADICIONADO') ? '🟠 EXCEDENTE ADICIONADO' : '🟢 ENCONTRADO / CONFERIDO'}</div>
     <div class="result-serie">${escapeHTML(hidrometro.numeroSerie)}</div>
+    <p class="muted">${escapeHTML(hidrometro.descricao || 'Descrição não informada. Selecione o tamanho abaixo.')}</p>
+    ${campoEmbalagem(initial)}
     <div class="field">
       <label for="lote-input">Lote / número do lacre</label>
       <input type="text" id="lote-input" value="${escapeHTML(itens.find(i => i.hidrometroId === hidrometro.id)?.lote || conferencia.loteAtual || hidrometro.lote || '')}" placeholder="Informe ou altere o lote" />
     </div>
     <div class="stack">
-      <button class="btn btn-primary" id="ov-salvar-lote">Salvar lote</button>
+      <button class="btn btn-primary" id="ov-salvar-lote">Salvar acondicionamento</button>
       <button class="btn btn-outline" id="ov-proximo">Próximo</button>
     </div>
   `);
+  configurarEmbalagem(panel, '#lote-input', initial);
   panel.querySelector('#ov-proximo')?.addEventListener('click', () => {
     closeOverlay();
     focusInput();
@@ -325,18 +334,18 @@ async function showResultadoEncontrado(hidrometro) {
     const lote = /** @type {HTMLInputElement} */ (panel.querySelector('#lote-input'));
     btn.disabled = true;
     try {
-      const lacre = lote.value.trim();
-      if (!lacre) throw new Error('Informe o número do lacre.');
-      if (sacoCount(lacre, hidrometro.numeroSerieNorm) >= 20) throw new Error('Este saco já tem 20 hidrômetros. Informe outro lacre.');
-      const updated = await updateLoteByNumeroSerie(hidrometro.numeroSerie, lacre);
+      const embalagem = panel.querySelector('#embalagem').value;
+      const lacre = embalagem === 'maior' ? '' : lote.value.trim();
+      validarSaco(itens, lacre, embalagem, hidrometro.numeroSerieNorm);
+      const updated = await updateLoteByNumeroSerie(hidrometro.numeroSerie, lacre, { semLacre: embalagem === 'maior' });
       const item = itens.find(i => i.hidrometroId === hidrometro.id);
       if (item) {
-        const next = await salvarLoteDoItem(item.id, lacre, { ...hidrometro, lote: lacre });
+        const next = await salvarLoteDoItem(item.id, lacre, { ...hidrometro, lote: lacre, embalagem });
         Object.assign(item, next);
       }
-      conferencia.loteAtual = lacre;
+      if (lacre) conferencia.loteAtual = lacre;
       await dbPut(STORES.CONFERENCIAS, conferencia);
-      containerRef.querySelector('#lacre-atual').value = lacre;
+      containerRef.querySelector('#lacre-atual').value = conferencia.loteAtual || '';
       updateSaco();
       applyUpdatedHidrometros(updated);
       await sincronizarAutomaticamente();
@@ -355,12 +364,20 @@ async function abrirNovoHidrometro(numeroSerie) {
     <h2 style="margin-top:0">Novo Hidrômetro</h2>
     <p class="muted">O equipamento será registrado como EXCEDENTE, com destaque no relatório e na planilha após o envio.</p>
     <div class="field"><label for="novo-serie">Número de série</label><input id="novo-serie" type="text" value="${escapeHTML(numeroSerie)}" required /></div>
+    <div class="field"><label for="novo-descricao">Descrição do hidrômetro</label><input id="novo-descricao" type="text" placeholder='Ex.: Hidrômetro 1 polegada' /></div>
+    ${campoEmbalagem('')}
     <div class="field"><label for="novo-lote">Lote</label><input id="novo-lote" type="text" value="${escapeHTML(conferencia.loteAtual || '')}" placeholder="Número do lacre" /></div>
     <div class="field"><label for="novo-devolucao">ID de devolução (opcional)</label><input id="novo-devolucao" type="text" /></div>
     <div class="field"><label for="novo-os">Ordem de serviço (opcional)</label><input id="novo-os" type="text" /></div>
     <div class="field"><label for="novo-obs">Observações (opcional)</label><textarea id="novo-obs" rows="2"></textarea></div>
     <div class="stack"><button class="btn btn-primary" id="novo-salvar">Salvar hidrômetro</button><button class="btn btn-outline" id="novo-cancelar">Cancelar</button></div>
   `);
+  configurarEmbalagem(panel, '#novo-lote', '');
+  panel.querySelector('#novo-descricao').addEventListener('input', event => {
+    const kind = identificarEmbalagem(event.target.value);
+    panel.querySelector('#embalagem').value = kind;
+    panel.querySelector('#embalagem').dispatchEvent(new Event('change'));
+  });
   panel.querySelector('#novo-cancelar')?.addEventListener('click', () => {
     closeOverlay();
     focusInput();
@@ -369,12 +386,14 @@ async function abrirNovoHidrometro(numeroSerie) {
     const btn = /** @type {HTMLButtonElement} */ (event.currentTarget);
     btn.disabled = true;
     try {
-      const lacre = panel.querySelector('#novo-lote').value.trim();
-      if (!lacre) throw new Error('Informe o número do lacre.');
-      if (sacoCount(lacre) >= 20) throw new Error('Este saco já tem 20 hidrômetros. Informe outro lacre.');
+      const embalagem = panel.querySelector('#embalagem').value;
+      const lacre = embalagem === 'maior' ? '' : panel.querySelector('#novo-lote').value.trim();
+      validarSaco(itens, lacre, embalagem);
       const h = await createHidrometro({
         numeroSerie: /** @type {HTMLInputElement} */ (panel.querySelector('#novo-serie')).value,
-        lote: /** @type {HTMLInputElement} */ (panel.querySelector('#novo-lote')).value,
+        lote: lacre,
+        descricao: panel.querySelector('#novo-descricao').value.trim(),
+        embalagem,
         idDevolucao: /** @type {HTMLInputElement} */ (panel.querySelector('#novo-devolucao')).value,
         ordemServico: /** @type {HTMLInputElement} */ (panel.querySelector('#novo-os')).value,
         observacoes: /** @type {HTMLTextAreaElement} */ (panel.querySelector('#novo-obs')).value,
@@ -383,9 +402,9 @@ async function abrirNovoHidrometro(numeroSerie) {
       maps.bySerieNorm.set(h.numeroSerieNorm, [...(maps.bySerieNorm.get(h.numeroSerieNorm) || []), h]);
       const saved = await registrarAdicionado(conferencia.id, h, conferencia.operador);
       const item = await salvarLoteDoItem(saved.id, lacre, h);
-      conferencia.loteAtual = lacre;
+      if (lacre) conferencia.loteAtual = lacre;
       await dbPut(STORES.CONFERENCIAS, conferencia);
-      containerRef.querySelector('#lacre-atual').value = lacre;
+      containerRef.querySelector('#lacre-atual').value = conferencia.loteAtual || '';
       itens.push(item);
       updateStats();
       closeOverlay();
@@ -397,6 +416,27 @@ async function abrirNovoHidrometro(numeroSerie) {
       btn.disabled = false;
     }
   });
+}
+
+function campoEmbalagem(selected) {
+  return `<div class="field"><label for="embalagem">Tamanho / acondicionamento</label><select id="embalagem"><option value="">Selecione o tamanho</option>${Object.entries(EMBALAGENS).map(([key, rule]) => `<option value="${key}" ${key === selected ? 'selected' : ''}>${rule.label}</option>`).join('')}</select><p class="muted" id="embalagem-ajuda"></p></div>`;
+}
+
+function configurarEmbalagem(panel, inputSelector, initial) {
+  const select = panel.querySelector('#embalagem');
+  const input = panel.querySelector(inputSelector);
+  const original = input.value;
+  const update = () => {
+    const semLacre = select.value === 'maior';
+    input.disabled = semLacre;
+    if (semLacre) input.value = '';
+    else if (!input.value) input.value = original;
+    panel.querySelector('#embalagem-ajuda').textContent = semLacre ? 'Fora do saco. Será salvo sem lacre.' :
+      EMBALAGENS[select.value] ? `Limite de ${EMBALAGENS[select.value].capacidade} peças por lacre, sem misturar tamanhos.` : 'Tamanho não identificado: confirme manualmente.';
+  };
+  select.value = initial;
+  select.addEventListener('change', update);
+  update();
 }
 
 async function sincronizarAutomaticamente() {

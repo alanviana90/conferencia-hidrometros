@@ -22,7 +22,9 @@ function doPost(e) {
     if (!sheet) throw new Error('Aba não encontrada.');
     const values = sheet.getDataRange().getDisplayValues();
     const headers = values[0];
-    const column = name => headers.findIndex(h => header_(h) === header_(name));
+    const column = name => headers.findIndex(h => header_(h) === header_(name) ||
+      (name === 'Nº Série Hidrômetro' && header_(h) === 'HDSUBSTITUIDO') ||
+      (name === 'Descrição' && ['MODELOHDSUBSTITUIDO', 'DESCRICAODOHIDROMETRO', 'DESCRICAOHIDROMETRO', 'DESCRICAODOMATERIAL'].includes(header_(h))));
     const serieCol = column('Nº Série Hidrômetro');
     if (serieCol < 0) throw new Error('Coluna Nº Série Hidrômetro não encontrada.');
     const ensure = name => {
@@ -46,14 +48,14 @@ function doPost(e) {
         const row = sheet.getLastRow() + 1;
         const fields = { 'ID': r.id, 'Concessionária': r.concessionaria, 'Data de Recebimento': r.dataRecebimento,
           'Ordem de Serviço': r.ordemServico, 'Código Hidrômetro': r.codigoHidrometro, 'Nº Série Hidrômetro': r.numeroSerie,
-          'ID DE DEVOLUÇÃO': r.idDevolucao, 'Observações': r.observacoes, 'Lote': r.lote,
+          'ID DE DEVOLUÇÃO': r.idDevolucao, 'Observações': r.observacoes, 'Lote': r.lote, 'Descrição': r.descricao,
           'Origem': 'ADICIONADO NA CONFERÊNCIA', 'Status da Conferência': 'EXCEDENTE — ADICIONADO NA CONFERÊNCIA', 'Data da Conferência': data.timestamp };
         Object.keys(fields).forEach(name => ensure(name));
         Object.entries(fields).forEach(([name, value]) => write(row, column(name), value));
         sheet.getRange(row, 1, 1, headers.length).setBackground('#fff2cc');
       }
     } else if (data.action === 'lote') {
-      if (!norm_(data.numeroSerie) || !norm_(data.lote)) throw new Error('Informe a série e o lacre.');
+      if (!norm_(data.numeroSerie) || (!norm_(data.lote) && data.semLacre !== true)) throw new Error('Informe a série e o lacre.');
       const matches = values.slice(1).map((r, i) => ({ r, row: i + 2 })).filter(x => norm_(x.r[serieCol]) === norm_(data.numeroSerie));
       if (!matches.length) throw new Error('Série não encontrada na planilha.');
       const loteCol = ensure('Lote');

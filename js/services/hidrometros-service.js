@@ -22,12 +22,13 @@ export async function fetchHidrometros({ force = false } = {}) {
   cacheKey = key;
   return records;
 }
-export async function updateLoteByNumeroSerie(numeroSerie, lote) {
+export async function updateLoteByNumeroSerie(numeroSerie, lote, { semLacre = false } = {}) {
   if ((await configGet('fonteBase', 'sheets')) === 'supabase') return (await import('./supabase-service.js')).updateLoteByNumeroSerie(numeroSerie, lote);
   const base = await fetchHidrometros();
   const updated = base.filter(r => r.numeroSerieNorm === normalizeText(numeroSerie));
   if (!updated.length) throw new Error('Série não encontrada.');
-  await queueChange({ action: 'lote', numeroSerie, lote: lote.trim() });
+  if (!lote.trim() && !semLacre) throw new Error('Informe o número do lacre.');
+  await queueChange({ action: 'lote', numeroSerie, lote: lote.trim(), semLacre });
   updated.forEach(r => { r.lote = lote.trim(); });
   return updated;
 }

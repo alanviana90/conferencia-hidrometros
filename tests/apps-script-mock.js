@@ -17,7 +17,7 @@ class SheetMock {
   getDataRange() { return this.getRange(1, 1, this.rows.length, Math.max(...this.rows.map(r => r.length))); }
 }
 const sheetMock = new SheetMock('Dados', [
-  ['Nº Série Hidrômetro', 'ID DE DEVOLUÇÃO', 'Ordem de Serviço', 'Lote'],
+  ['HD Substituído', 'ID DE DEVOLUÇÃO', 'Ordem de Serviço', 'Lote', 'Modelo HD Substituido\n'],
   ['000123', '01', '001', ''], ['000123', '02', '002', ''],
 ]);
 const sheetsMock = [sheetMock];

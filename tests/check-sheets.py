@@ -83,12 +83,14 @@ try:
         page.locator('#serie-input').fill('000123')
         page.locator('#btn-confirmar').click()
         page.locator('#ov-matches button').first.click()
+        page.locator('#embalagem').select_option('3/4')
         page.locator('#ov-salvar-lote').click()
         page.wait_for_function("document.querySelector('#saco-contagem').textContent.includes('1/20')")
         page.locator('#serie-input').fill('EXTRA001')
         page.locator('#btn-confirmar').click()
         page.locator('#ov-novo').click()
         page.locator('#novo-lote').fill('000987')
+        page.locator('#embalagem').select_option('3/4')
         page.locator('#novo-salvar').click()
         page.wait_for_function("document.querySelector('#saco-contagem').textContent.includes('2/20')")
         page.locator('#serie-input').fill('EXTRA001')
@@ -166,10 +168,11 @@ try:
           return conf.id;
         }''')
         page.goto(f'http://127.0.0.1:{server.server_port}/#/conferencia/{full_id}')
-        page.wait_for_function("document.querySelector('#saco-contagem')?.textContent.includes('20/20')")
+        page.wait_for_function("document.querySelector('#saco-contagem')?.textContent.includes('20 hidrômetros')")
         page.locator('#serie-input').fill('000123')
         page.locator('#btn-confirmar').click()
         page.locator('#ov-matches button').first.click()
+        page.locator('#embalagem').select_option('3/4')
         page.locator('#ov-salvar-lote').click()
         page.get_by_text('Este saco já tem 20 hidrômetros. Informe outro lacre.', exact=True).wait_for()
         assert page.locator('#ov-salvar-lote').is_visible()
@@ -182,11 +185,13 @@ try:
           sheetLink: 'https://docs.google.com/spreadsheets/d/' + SPREADSHEET_ID + '/edit', ...op }) } }).value;
         const invalid = post({ operationId: 'bad', action: 'lote', numeroSerie: '000123', lote: '00987', token: 'wrong' });
         const lote = post({ operationId: 'lote-1', action: 'lote', numeroSerie: '000123', lote: '00987' });
-        const record = { id: 'extra-id', numeroSerie: '000999', lote: '00987', ordemServico: '', idDevolucao: '' };
+        const record = { id: 'extra-id', numeroSerie: '000999', descricao: 'Hidrômetro 2 polegadas', lote: '00987', ordemServico: '', idDevolucao: '' };
         const added = post({ operationId: 'add-1', action: 'create', record });
         const repeated = post({ operationId: 'add-1', action: 'create', record });
         const missing = post({ operationId: 'status-1', action: 'status', record: { numeroSerie: '000123', idDevolucao: '01', ordemServico: '001' }, status: 'FALTANTE' });
-        return { invalid, lote, added, repeated, missing, rows: sheetMock.rows, colors: sheetMock.colors };
+        const invalidClear = post({ operationId: 'invalid-clear', action: 'lote', numeroSerie: '000999', lote: '' });
+        const clear = post({ operationId: 'clear-1', action: 'lote', numeroSerie: '000999', lote: '', semLacre: true });
+        return { invalid, lote, added, repeated, missing, invalidClear, clear, rows: sheetMock.rows, colors: sheetMock.colors };
         '''
         backend_result = page.evaluate('(source) => new Function(source)()', backend)
         assert not backend_result['invalid']['ok']
@@ -194,8 +199,65 @@ try:
         assert len(backend_result['rows']) == 4
         assert backend_result['rows'][1][3] == '00987' and backend_result['rows'][2][3] == '00987'
         assert backend_result['colors'][0]['color'] == '#fff2cc'
+        assert not backend_result['invalidClear']['ok'] and backend_result['clear']['ok']
+        assert backend_result['rows'][3][3] == ''
+        assert backend_result['rows'][3][4] == 'Hidrômetro 2 polegadas'
+        assert 'Descrição' not in backend_result['rows'][0] and 'Nº Série Hidrômetro' not in backend_result['rows'][0]
         print('OK: lacres, excedentes, persistência, sincronização simulada, faltantes, XLSX e Apps Script simulado.')
         assert not errors, errors
+        packaging = page.evaluate('''async () => {
+          const p = await import('./js/services/embalagem.js');
+          const source = await import('./js/services/sheets-source.js');
+          const descriptions = ['Hidrômetro 3/4"', 'Hidrômetro 1 polegada', 'Hidrômetro 1.1/2"',
+            'Hidrômetro 1 1/2 pol', 'Hidrômetro 2"', 'Hidrômetro 4 polegadas', 'Vazão 1,5 m³/h', '', 'Hidrômetro ¾"'];
+          const rows = source.recordsFromRows([['HD Substituído', 'ID DE DEVOLUÇÃO', 'Ordem de Serviço', 'Modelo HD Substituido' + String.fromCharCode(10)], ['01', '1', '1', descriptions[0]]]);
+          let mixed = false, unknown = false;
+          try { p.validarSaco([{status: 'ENCONTRADO', lote: 'A', numeroSerieDigitado: '01', hidrometroSnapshot: {embalagem: '1'}}], 'A', '3/4'); } catch { mixed = true; }
+          try { p.validarSaco([], 'A', ''); } catch { unknown = true; }
+          return {kinds: descriptions.map(p.identificarEmbalagem), descricao: rows[0].descricao, mixed, unknown};
+        }''')
+        assert packaging['kinds'] == ['3/4', '1', 'maior', 'maior', 'maior', 'maior', '', '', '3/4'], packaging
+        assert packaging['descricao'] == 'Hidrômetro 3/4"' and packaging['mixed'] and packaging['unknown']
+        size_id = page.evaluate('''async () => {
+          const c = await import('./js/services/conferencia-service.js');
+          const h = await import('./js/services/hidrometros-service.js');
+          const db = await import('./js/db.js');
+          await h.createHidrometro({numeroSerie: 'ONE001', descricao: 'Hidrômetro 1 polegada', lote: ''});
+          await h.createHidrometro({numeroSerie: 'BIG001', descricao: 'Hidrômetro 1.1/2"', lote: 'OLD'});
+          const session = await c.createConferencia({nome: 'Tamanhos', operador: 'Teste', filtros: c.filtrosVazios(), base: await h.fetchHidrometros()});
+          session.loteAtual = 'TEN';
+          await db.dbPut(db.STORES.CONFERENCIAS, session);
+          await db.dbBulkPut(db.STORES.ITENS_CONFERIDOS, Array.from({length: 10}, (_, i) => ({id: 'ten-' + i,
+            conferenciaId: session.id, status: 'ENCONTRADO', numeroSerieDigitado: 'one-seed-' + i, lote: 'TEN', hidrometroSnapshot: {embalagem: '1'}})));
+          return session.id;
+        }''')
+        page.goto(f'http://127.0.0.1:{server.server_port}/#/conferencia/{size_id}')
+        page.locator('#serie-input').fill('ONE001')
+        page.locator('#btn-confirmar').click()
+        assert page.locator('#embalagem').input_value() == '1'
+        page.locator('#ov-salvar-lote').click()
+        page.get_by_text('Este saco já tem 10 hidrômetros. Informe outro lacre.', exact=True).wait_for()
+        page.locator('#lote-input').fill('NEW-TEN')
+        page.locator('#ov-salvar-lote').click()
+        page.wait_for_function("document.querySelector('#saco-contagem').textContent.includes('1/10')")
+        page.wait_for_function("!document.querySelector('#ov-salvar-lote')")
+        page.locator('#serie-input').fill('BIG001')
+        page.locator('#btn-confirmar').click()
+        assert page.locator('#embalagem').input_value() == 'maior'
+        assert page.locator('#lote-input').is_disabled() and page.locator('#lote-input').input_value() == ''
+        page.locator('#ov-salvar-lote').click()
+        page.wait_for_function("!document.querySelector('#ov-salvar-lote')")
+        stored = page.evaluate('''async id => {
+          const c = await import('./js/services/conferencia-service.js');
+          const e = await import('./js/services/export-service.js');
+          const item = (await c.getItensDaConferencia(id)).find(i => i.numeroSerieDigitado === 'BIG001');
+          const row = (await e.buildRelatorioLinhas(id)).linhas.find(r => r['Número de Série'] === 'BIG001');
+          return {item, row, conference: await c.getConferencia(id)};
+        }''', size_id)
+        assert stored['item']['lote'] == '' and stored['item']['hidrometroSnapshot']['embalagem'] == 'maior'
+        assert stored['row']['Capacidade do saco'] == 0 and stored['row']['Lote / Lacre'] == ''
+        assert stored['conference']['loteAtual'] == 'NEW-TEN'
+        print('OK: descrição, tamanhos, saco de 10, limite, tamanhos separados e maiores sem lacre.')
         regression = page.evaluate('''async () => {
           const c = await import('./js/services/conferencia-service.js');
           const records = [{id: 'a', numeroSerie: '000123', numeroSerieNorm: '000123'},
