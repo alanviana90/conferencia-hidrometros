@@ -20,8 +20,8 @@ export async function render(container, params, search) {
   const baseById = new Map(base.map((r) => [r.id, r]));
 
   const resolvidos = itens
-    .filter((i) => ['ENCONTRADO', 'NAO_ENCONTRADO', 'ADICIONADO'].includes(i.status))
-    .map((i) => ({ item: i, hidrometro: i.hidrometroSnapshot || baseById.get(i.hidrometroId) }))
+    .filter((i) => ['ENCONTRADO', 'NAO_ENCONTRADO', 'ADICIONADO', 'SERIE_INEXISTENTE'].includes(i.status))
+    .map((i) => ({ item: i, hidrometro: i.hidrometroSnapshot || baseById.get(i.hidrometroId) || { numeroSerie: i.numeroSerieDigitado } }))
     .filter((x) => x.hidrometro)
     .sort((a, b) => (a.item.timestamp < b.item.timestamp ? 1 : -1));
 
@@ -54,7 +54,7 @@ export async function render(container, params, search) {
 
 /** @param {HTMLElement} container @param {{item:any, hidrometro:any}[]} resolvidos */
 function renderLista(container, resolvidos) {
-  const filtrados = filtroAtual === 'TODOS' ? resolvidos : resolvidos.filter((x) => x.item.status === filtroAtual);
+  const filtrados = filtroAtual === 'TODOS' ? resolvidos : resolvidos.filter((x) => x.item.status === filtroAtual || (filtroAtual === 'NAO_ENCONTRADO' && x.item.status === 'SERIE_INEXISTENTE'));
   const lista = /** @type {HTMLElement} */ (container.querySelector('#lista'));
 
   if (!filtrados.length) {

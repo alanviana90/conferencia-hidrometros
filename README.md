@@ -2,6 +2,8 @@
 
 ## Fonte da base: Google Sheets
 
+Na conferência, a mesma série física não pode ser registrada duas vezes, mesmo que existam devoluções diferentes na base. Séries ausentes oferecem até cinco sugestões próximas: o operador pode usar uma sugestão, redigitar ou confirmar a divergência. As divergências confirmadas aparecem imediatamente no contador e na lista de não encontrados. Ao salvar um lacre ou cadastrar um excedente, o app tenta enviar as alterações automaticamente ao Sheets usando a URL do Apps Script e a chave configuradas. Se o envio falhar, os dados permanecem no aparelho para envio posterior pelo botão **Enviar alterações à planilha**.
+
 O app usa Google Sheets por padrão, já configurado para a primeira aba (`gid=0`) da planilha fornecida, em `js/sheets-config.js`. Para mudar a fonte, abra **Configurações**, informe o link da planilha e o nome da aba, clique em **Testar conexão** e depois em **Salvar e atualizar base**. Configurações salvas no aparelho prevalecem sobre o padrão do projeto.
 
 A aba precisa estar publicada em CSV ou permitir leitura pelo link. Para publicar somente a aba desejada, use **Arquivo → Compartilhar → Publicar na Web**, selecione a aba e o formato CSV. Use o link fornecido no app. Publicar torna os dados dessa aba acessíveis a quem tiver o link; para uma planilha privada, será necessária outra integração.

@@ -196,6 +196,33 @@ try:
         assert backend_result['colors'][0]['color'] == '#fff2cc'
         print('OK: lacres, excedentes, persistência, sincronização simulada, faltantes, XLSX e Apps Script simulado.')
         assert not errors, errors
+        regression = page.evaluate('''async () => {
+          const c = await import('./js/services/conferencia-service.js');
+          const records = [{id: 'a', numeroSerie: '000123', numeroSerieNorm: '000123'},
+            {id: 'b', numeroSerie: '000123', numeroSerieNorm: '000123'},
+            {id: 'c', numeroSerie: '999999', numeroSerieNorm: '999999'}];
+          const maps = c.buildBaseMaps(records);
+          const items = [{hidrometroId: 'a', status: 'ENCONTRADO', numeroSerieDigitado: '000123'}];
+          const conference = {expectedHidrometroIds: ['a', 'b']};
+          return {suggestions: c.sugerirSeries('000124', maps),
+            repeated: (await c.avaliarSerie('000123', maps, items, conference, '')).tipo,
+            chosen: (await c.escolherDuplicata(records[1], '000123', maps, items, conference, '')).tipo};
+        }''')
+        assert regression['suggestions'] == [{'numeroSerie': '000123', 'distance': 1}]
+        assert regression['repeated'] == regression['chosen'] == 'REPETIDO'
+        missing_id = page.evaluate('''async () => {
+          const c = await import('./js/services/conferencia-service.js');
+          const session = await c.createConferencia({nome: 'Ausentes', operador: 'Teste', filtros: c.filtrosVazios(), base: []});
+          await c.confirmarSerieInexistente(session.id, 'AUSENTE001', 'Teste');
+          let blocked = false;
+          try { await c.confirmarSerieInexistente(session.id, 'AUSENTE001', 'Teste'); } catch { blocked = true; }
+          if (!blocked) throw new Error('Duplicidade aceita');
+          return session.id;
+        }''')
+        page.goto(f'http://127.0.0.1:{server.server_port}/#/conferencia/{missing_id}/conferidos?status=NAO_ENCONTRADO')
+        page.get_by_text('AUSENTE001', exact=True).wait_for()
+        print('OK: aproximação, bloqueio de série repetida e lista de séries ausentes.')
+        assert not errors, errors
         browser.close()
         print('OK: configuração, leitura CSV, zeros, datas, duplicidades, IDs estáveis, home e busca.')
 finally:

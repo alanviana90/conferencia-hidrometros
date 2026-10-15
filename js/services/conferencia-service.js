@@ -89,6 +89,27 @@ export function buildBaseMaps(base) {
   return { byId, bySerieNorm };
 }
 
+/** Sugere séries por distância de edição, preservando zeros à esquerda. */
+export function sugerirSeries(serie, maps) {
+  const query = normalizeText(serie);
+  const limit = query.length < 5 ? 1 : 2;
+  const suggestions = [];
+  for (const [candidate, records] of maps.bySerieNorm) {
+    if (Math.abs(candidate.length - query.length) > limit) continue;
+    let previous = Array.from({ length: candidate.length + 1 }, (_, i) => i);
+    for (let i = 1; i <= query.length; i++) {
+      const current = [i];
+      for (let j = 1; j <= candidate.length; j++) {
+        current[j] = Math.min(current[j - 1] + 1, previous[j] + 1, previous[j - 1] + (query[i - 1] === candidate[j - 1] ? 0 : 1));
+      }
+      previous = current;
+    }
+    const distance = previous[candidate.length];
+    if (distance <= limit) suggestions.push({ numeroSerie: records[0].numeroSerie, distance });
+  }
+  return suggestions.sort((a, b) => a.distance - b.distance || a.numeroSerie.localeCompare(b.numeroSerie)).slice(0, 5);
+}
+
 /**
  * @param {{nome: string, operador: string, filtros: Filtros, base: HidrometroRecord[]}} params
  */
@@ -172,6 +193,7 @@ export function computeStats(conferencia, itens) {
 
 /**
  * @typedef {{tipo:'VAZIO'}
+ *  | {tipo:'REPETIDO', item: any}
  *  | {tipo:'ENCONTRADO', hidrometro: HidrometroRecord, item: any}
  *  | {tipo:'JA_CONFERIDO', hidrometro: HidrometroRecord, item: any}
  *  | {tipo:'FORA_DO_FILTRO', hidrometro: HidrometroRecord}
@@ -214,6 +236,9 @@ export async function avaliarSerie(serieDigitada, maps, itensExistentes, confere
   const itensPorHidrometroId = new Map(itensExistentes.filter((i) => i.hidrometroId).map((i) => [i.hidrometroId, i]));
 
   const matches = maps.bySerieNorm.get(norm) || [];
+  const repeated = itensExistentes.find(i => ['ENCONTRADO', 'ADICIONADO', 'FORA_DO_FILTRO', 'SERIE_INEXISTENTE'].includes(i.status) &&
+    normalizeText(i.hidrometroSnapshot?.numeroSerie || i.numeroSerieDigitado) === norm);
+  if (repeated) return { tipo: 'REPETIDO', item: repeated };
   if (matches.length === 0) return { tipo: 'SERIE_INEXISTENTE', serieDigitada };
 
   if (matches.length > 1) {
@@ -239,6 +264,9 @@ export async function avaliarSerie(serieDigitada, maps, itensExistentes, confere
  * @returns {Promise<ScanDecision>}
  */
 export async function escolherDuplicata(hidrometroEscolhido, serieDigitada, maps, itensExistentes, conferencia, operador) {
+  const repeated = itensExistentes.find(i => ['ENCONTRADO', 'ADICIONADO', 'FORA_DO_FILTRO'].includes(i.status) &&
+    normalizeText(i.hidrometroSnapshot?.numeroSerie || i.numeroSerieDigitado) === normalizeText(serieDigitada));
+  if (repeated) return { tipo: 'REPETIDO', item: repeated };
   const itensPorHidrometroId = new Map(itensExistentes.filter((i) => i.hidrometroId).map((i) => [i.hidrometroId, i]));
   const decision = resolveChosen(maps, itensPorHidrometroId, hidrometroEscolhido, conferencia);
   if (decision.tipo === 'ENCONTRADO') {
@@ -284,6 +312,10 @@ export async function marcarComoNaoEncontrado(conferenciaId, hidrometro, operado
  * @param {string} operador
  */
 async function registrarItem(conferenciaId, hidrometroId, numeroSerieDigitado, status, operador) {
+  const existing = await getItensDaConferencia(conferenciaId);
+  const repeated = existing.find(i => normalizeText(i.hidrometroSnapshot?.numeroSerie || i.numeroSerieDigitado) === normalizeText(numeroSerieDigitado) &&
+    (i.status === status || (['ENCONTRADO', 'ADICIONADO', 'FORA_DO_FILTRO'].includes(i.status) && ['ENCONTRADO', 'ADICIONADO', 'FORA_DO_FILTRO'].includes(status))));
+  if (repeated) throw new Error('Esta série já foi registrada nesta conferência.');
   const base = await dbGetAll(STORES.HIDROMETROS);
   const record = base.find(r => r.id === hidrometroId);
   const item = {

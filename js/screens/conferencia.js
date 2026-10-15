@@ -6,6 +6,7 @@ import {
   buildBaseMaps,
   computeStats,
   avaliarSerie,
+  sugerirSeries,
   escolherDuplicata,
   confirmarForaDoFiltro,
   confirmarSerieInexistente,
@@ -149,7 +150,7 @@ function updateStats() {
   };
   set('st-esperado', stats.esperado.toLocaleString('pt-BR'));
   set('st-encontrados', stats.encontrados.toLocaleString('pt-BR'));
-  set('st-naoencontrados', stats.naoEncontrados.toLocaleString('pt-BR'));
+  set('st-naoencontrados', (stats.naoEncontrados + stats.serieInexistente).toLocaleString('pt-BR'));
   set('st-conferidos', stats.conferidos.toLocaleString('pt-BR'));
   set('st-pendentes', stats.pendentes.toLocaleString('pt-BR'));
 
@@ -187,6 +188,10 @@ async function onSubmitSerie() {
  */
 async function handleDecision(decision, serieDigitada) {
   if (decision.tipo === 'VAZIO') return;
+  if (decision.tipo === 'REPETIDO') {
+    showResultado({ tone: 'warning', badge: 'SÉRIE JÁ REGISTRADA', serie: serieDigitada, lines: ['Esta série já foi registrada nesta conferência.'] });
+    return;
+  }
 
   if (decision.tipo === 'ENCONTRADO') {
     itens.push(decision.item);
@@ -227,28 +232,46 @@ async function handleDecision(decision, serieDigitada) {
   }
 
   if (decision.tipo === 'SERIE_INEXISTENTE') {
+    const suggestions = sugerirSeries(serieDigitada, maps);
     const { panel } = openOverlay(`
       <div class="result-badge danger">🔴 NÃO ENCONTRADO NA BASE</div>
       <div class="result-serie">${escapeHTML(serieDigitada)}</div>
       <p>Esta série não foi localizada na base de dados.</p>
+      ${suggestions.length ? `<p>Séries próximas na base. Confirme a série física antes de ajustar:</p><div class="stack">${suggestions.map((s, i) => `<button class="btn btn-outline" data-suggestion="${i}">Usar ${escapeHTML(s.numeroSerie)}</button>`).join('')}</div>` : ''}
       <div class="stack">
         <button class="btn btn-outline" id="ov-digitar">Digitar novamente</button>
         <button class="btn btn-primary" id="ov-novo">➕ Adicionar excedente</button>
         <button class="btn btn-danger" id="ov-registrar">Registrar como não encontrada</button>
       </div>
     `);
+    panel.querySelectorAll('[data-suggestion]').forEach(button => button.addEventListener('click', async () => {
+      if (button.disabled) return;
+      button.disabled = true;
+      try {
+        const corrected = suggestions[Number(button.dataset.suggestion)].numeroSerie;
+        const next = await avaliarSerie(corrected, maps, itens, conferencia, conferencia.operador);
+        await handleDecision(next, corrected);
+      } catch (err) { showToast(err.message); button.disabled = false; }
+    }));
     panel.querySelector('#ov-digitar')?.addEventListener('click', () => {
       closeOverlay();
       focusInput();
     });
     panel.querySelector('#ov-novo')?.addEventListener('click', () => abrirNovoHidrometro(serieDigitada));
-    panel.querySelector('#ov-registrar')?.addEventListener('click', async () => {
+    panel.querySelector('#ov-registrar')?.addEventListener('click', async (event) => {
+      if (event.currentTarget.disabled) return;
+      event.currentTarget.disabled = true;
+      try {
       const item = await confirmarSerieInexistente(conferencia.id, serieDigitada, conferencia.operador);
       itens.push(item);
       updateStats();
       closeOverlay();
       showToast('Registrado.');
       focusInput();
+      } catch (err) {
+        showToast(err instanceof Error ? err.message : String(err));
+        event.currentTarget.disabled = false;
+      }
     });
     return;
   }
@@ -316,7 +339,7 @@ async function showResultadoEncontrado(hidrometro) {
       containerRef.querySelector('#lacre-atual').value = lacre;
       updateSaco();
       applyUpdatedHidrometros(updated);
-      showToast('Lacre salvo no aparelho. Envie as alterações à planilha para sincronizar.');
+      await sincronizarAutomaticamente();
       closeOverlay();
       focusInput();
     } catch (err) {
@@ -367,13 +390,18 @@ async function abrirNovoHidrometro(numeroSerie) {
       updateStats();
       closeOverlay();
       updateSaco();
-      showToast('Excedente salvo no aparelho e destacado no relatório. Envie as alterações à planilha.');
+      await sincronizarAutomaticamente();
       focusInput();
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Erro ao cadastrar o hidrômetro.');
       btn.disabled = false;
     }
   });
+}
+
+async function sincronizarAutomaticamente() {
+  try { await syncChanges(); showToast('Alterações enviadas ao Google Sheets.'); }
+  catch (err) { showToast('Salvo no aparelho; envio pendente: ' + (err instanceof Error ? err.message : String(err))); }
 }
 
 /** Mantém os índices em memória coerentes após um UPDATE remoto. */

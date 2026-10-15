@@ -1,7 +1,7 @@
 // Service Worker da interface. A casca do app fica em cache, mas a base de
 // hidrômetros é consultada no Google Sheets e requer conexão.
 
-const CACHE_NAME = 'hidrometros-cache-v7';
+const CACHE_NAME = 'hidrometros-cache-v8';
 
 const PRECACHE_URLS = [
   './',
