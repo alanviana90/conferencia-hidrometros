@@ -13,6 +13,7 @@ import {
   finalizarConferencia,
   registrarAdicionado,
   salvarLoteDoItem,
+  resolverIdentificacao,
 } from '../services/conferencia-service.js';
 import { topbarHTML, showToast, confirmDialog, openOverlay, closeOverlay } from '../ui.js';
 import { escapeHTML, formatDateTimeBR } from '../utils.js';
@@ -26,12 +27,15 @@ let conferencia = null;
 let maps;
 /** @type {any[]} */
 let itens = [];
+let serieOrigem = '';
+let identificacaoOrigem = '';
 /** @type {HTMLElement} */
 let containerRef;
 let overlayAutoCloseTimer = /** @type {ReturnType<typeof setTimeout>|null} */ (null);
 
 /** @param {HTMLElement} container @param {{id:string}} params */
-export async function render(container, params) {
+export async function render(container, params, search) {
+  identificacaoOrigem = search?.get('serie') || '';
   containerRef = container;
   conferencia = await getConferencia(params.id);
 
@@ -122,6 +126,8 @@ export async function render(container, params) {
   });
   updateSaco();
   focusInput();
+  const serieInicial = search?.get('serie');
+  if (serieInicial) container.querySelector('#serie-input').value = serieInicial;
 }
 
 function sacoCount(lacre, excludingSerie = '') {
@@ -165,6 +171,7 @@ function updateStats() {
   if (extra) {
     const partes = [];
     if (stats.excedentes) partes.push(`${stats.excedentes} excedentes adicionados`);
+    if (stats.pendentesIdentificacao) partes.push(`${stats.pendentesIdentificacao} pendentes de identificação — veja Pendentes`);
     if (stats.foraDoFiltro) partes.push(`${stats.foraDoFiltro} fora do filtro`);
     if (stats.serieInexistente) partes.push(`${stats.serieInexistente} série inexistente digitada`);
     extra.textContent = partes.join(' · ');
@@ -175,6 +182,7 @@ async function onSubmitSerie() {
   const input = /** @type {HTMLInputElement} */ (containerRef.querySelector('#serie-input'));
   const serie = input.value.trim();
   if (!serie) return;
+  serieOrigem = identificacaoOrigem || serie;
 
   const btn = containerRef.querySelector('#btn-confirmar');
   if (btn.disabled) return;
@@ -193,6 +201,14 @@ async function onSubmitSerie() {
 async function handleDecision(decision, serieDigitada) {
   if (decision.tipo === 'VAZIO') return;
   if (decision.tipo === 'REPETIDO') {
+    const pending = itens.find(i => i.status === 'PENDENTE_IDENTIFICACAO' && i.numeroSerieDigitado === serieOrigem);
+    const existing = maps.byId.get(decision.item.hidrometroId);
+    if (pending && existing && await confirmDialog({ title: 'Série já conferida',
+      message: `Associar a pendência ${serieOrigem} à série ${existing.numeroSerie}, já conferida? A quantidade não será aumentada. Confira o lacre no próximo passo.`,
+      confirmLabel: 'Associar e conferir lacre' })) {
+      await showResultadoEncontrado(existing);
+      return;
+    }
     showResultado({ tone: 'warning', badge: 'SÉRIE JÁ REGISTRADA', serie: serieDigitada, lines: ['Esta série já foi registrada nesta conferência.'] });
     return;
   }
@@ -342,6 +358,10 @@ async function showResultadoEncontrado(hidrometro) {
       if (item) {
         const next = await salvarLoteDoItem(item.id, lacre, { ...hidrometro, lote: lacre, embalagem });
         Object.assign(item, next);
+        await resolverIdentificacao(conferencia.id, serieOrigem, next);
+        identificacaoOrigem = '';
+        itens = await getItensDaConferencia(conferencia.id);
+        updateStats();
       }
       if (lacre) conferencia.loteAtual = lacre;
       await dbPut(STORES.CONFERENCIAS, conferencia);
@@ -402,10 +422,12 @@ async function abrirNovoHidrometro(numeroSerie) {
       maps.bySerieNorm.set(h.numeroSerieNorm, [...(maps.bySerieNorm.get(h.numeroSerieNorm) || []), h]);
       const saved = await registrarAdicionado(conferencia.id, h, conferencia.operador);
       const item = await salvarLoteDoItem(saved.id, lacre, h);
+      await resolverIdentificacao(conferencia.id, serieOrigem, item);
+      identificacaoOrigem = '';
       if (lacre) conferencia.loteAtual = lacre;
       await dbPut(STORES.CONFERENCIAS, conferencia);
       containerRef.querySelector('#lacre-atual').value = conferencia.loteAtual || '';
-      itens.push(item);
+      itens = await getItensDaConferencia(conferencia.id);
       updateStats();
       closeOverlay();
       updateSaco();
@@ -486,6 +508,10 @@ function statusLabel(status) {
 
 async function onFinalizar() {
   const stats = computeStats(conferencia, itens);
+  if (stats.pendentesIdentificacao) {
+    showToast(`Resolva as ${stats.pendentesIdentificacao} séries pendentes de identificação antes de finalizar. Veja a lista de Pendentes.`);
+    return;
+  }
   const ok = await confirmDialog({
     title: 'Finalizar conferência?',
     message:

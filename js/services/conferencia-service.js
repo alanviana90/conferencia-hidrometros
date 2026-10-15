@@ -163,8 +163,11 @@ export function computeStats(conferencia, itens) {
   let foraDoFiltro = 0;
   let serieInexistente = 0;
   let excedentes = 0;
+  let pendentesIdentificacao = 0;
 
   for (const item of itens) {
+    if (item.status === 'PENDENTE_IDENTIFICACAO') { pendentesIdentificacao++; continue; }
+    if (item.status === 'CORRIGIDO') continue;
     if (item.status === 'ADICIONADO') { excedentes++; continue; }
     if (item.status === 'FORA_DO_FILTRO') {
       foraDoFiltro++;
@@ -188,7 +191,16 @@ export function computeStats(conferencia, itens) {
   const pendentes = esperado - conferidos;
   const percentual = esperado > 0 ? Math.round((conferidos / esperado) * 100) : 0;
 
-  return { esperado, encontrados, naoEncontrados, conferidos, pendentes, foraDoFiltro, serieInexistente, excedentes, percentual };
+  return { esperado, encontrados, naoEncontrados, conferidos, pendentes, pendentesIdentificacao, foraDoFiltro, serieInexistente, excedentes, percentual };
+}
+
+/** Encerra a pendência de identificação depois de salvar a série física e o lacre. */
+export async function resolverIdentificacao(conferenciaId, serieOriginal, item) {
+  const rows = await getItensDaConferencia(conferenciaId);
+  for (const pending of rows.filter(i => i.status === 'PENDENTE_IDENTIFICACAO' && normalizeText(i.numeroSerieDigitado) === normalizeText(serieOriginal))) {
+    await dbPut(STORES.ITENS_CONFERIDOS, { ...pending, status: 'CORRIGIDO', resolvidoPor: item.id,
+      serieCorrigida: item.hidrometroSnapshot?.numeroSerie || item.numeroSerieDigitado, resolvedAt: nowISO() });
+  }
 }
 
 /**
@@ -344,7 +356,7 @@ async function registrarItem(conferenciaId, hidrometroId, numeroSerieDigitado, s
  * resolvido em mais de uma conferência ao longo do tempo — vale a resolução mais recente).
  */
 export async function getGlobalStats() {
-  const [base, todosItens] = await Promise.all([dbGetAll(STORES.HIDROMETROS), dbGetAll(STORES.ITENS_CONFERIDOS)]);
+  const [base, todosItens, conferencias] = await Promise.all([dbGetAll(STORES.HIDROMETROS), dbGetAll(STORES.ITENS_CONFERIDOS), listConferencias()]);
 
   /** @type {Map<string, any>} */
   const latestByHidrometro = new Map();
@@ -361,6 +373,13 @@ export async function getGlobalStats() {
 
   let encontrados = 0;
   let naoEncontrados = 0;
+  // A continuação devolve pendências ao painel sem alterar o histórico original.
+  for (const recovered of conferencias.filter(c => c.recuperadaDe)) {
+    for (const id of recovered.expectedHidrometroIds) {
+      const previous = latestByHidrometro.get(id);
+      if (previous && previous.timestamp < recovered.createdAt) latestByHidrometro.delete(id);
+    }
+  }
   for (const item of latestByHidrometro.values()) {
     if (item.status === 'ENCONTRADO' || item.status === 'ADICIONADO') encontrados++;
     else naoEncontrados++;
@@ -381,6 +400,7 @@ export async function finalizarConferencia(conferenciaId) {
   if (!conferencia) throw new Error('Conferência não encontrada.');
 
   const itens = await getItensDaConferencia(conferenciaId);
+  if (itens.some(i => i.status === 'PENDENTE_IDENTIFICACAO')) throw new Error('Resolva as séries pendentes de identificação antes de finalizar.');
   const resolvidos = new Set(itens.filter((i) => i.hidrometroId && i.status !== 'FORA_DO_FILTRO').map((i) => i.hidrometroId));
 
   const base = await dbGetAll(STORES.HIDROMETROS);

@@ -20,7 +20,8 @@ export async function render(container, params) {
   }
 
   const [base, itens] = await Promise.all([dbGetAll(STORES.HIDROMETROS), getItensDaConferencia(conferencia.id)]);
-  const baseById = new Map(base.map((r) => [r.id, r]));
+  const baseById = new Map([...(conferencia.baseSnapshot || []), ...base].map((r) => [r.id, r]));
+  busca = '';
   const resolvedIds = new Set(itens.filter((i) => i.status === 'ENCONTRADO' || i.status === 'NAO_ENCONTRADO').map((i) => i.hidrometroId));
 
   pendentes = conferencia.expectedHidrometroIds
@@ -33,6 +34,7 @@ export async function render(container, params) {
       ${topbarHTML('Ainda não conferidos', `#/conferencia/${conferencia.id}`)}
       <div class="content stack">
         <input type="search" id="busca" placeholder="Buscar por série, OS, código, devolução…" />
+        ${itens.some(i => i.status === 'PENDENTE_IDENTIFICACAO') ? `<div class="card"><strong>Pendentes de identificação</strong><p>Estas séries do relatório ainda não têm correspondência exata na base atual. Toque para conferir a série física, usar uma sugestão ou cadastrar um excedente.</p><div class="stack">${itens.filter(i => i.status === 'PENDENTE_IDENTIFICACAO').map(i => `<a class="btn btn-outline" href="#/conferencia/${conferencia.id}?serie=${encodeURIComponent(i.numeroSerieDigitado)}">${escapeHTML(i.numeroSerieDigitado)}</a>`).join('')}</div></div>` : ''}
         <div class="row">
           <select id="ordenacao" style="flex:1">
             <option value="serie">Ordenar por série</option>

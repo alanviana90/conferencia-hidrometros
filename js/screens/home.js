@@ -48,6 +48,7 @@ export async function render(container) {
             ▶️ Continuar Conferência ${emAndamento.length ? `(${emAndamento.length})` : ''}
           </a>
           <a class="btn btn-outline btn-lg" href="#/historico">🕘 Histórico</a>
+          <a class="btn btn-outline" href="#/recuperar">Retomar pelo relatório (.xlsx)</a>
           <a class="btn btn-outline btn-lg" href="#/base">📋 Base de Hidrômetros</a>
           ${editavel === 'supabase' ? '<a class="btn btn-outline" href="./admin/">Administrar Supabase</a>' : '<div class="muted center">☁️ Base do Google Sheets</div><a class="btn btn-outline" href="#/config">Atualizar base</a>'}
         </div>

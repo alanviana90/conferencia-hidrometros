@@ -66,6 +66,7 @@ export async function render(container, params) {
           <a class="btn btn-outline" href="#/conferencia/${conferencia.id}/conferidos?status=NAO_ENCONTRADO">Ver Não Encontrados</a>
           <a class="btn btn-outline" href="#/conferencia/${conferencia.id}/conferidos">Ver Conferidos</a>
           <button class="btn btn-outline" id="btn-exportar">⬇️ Exportar Resultado (.xlsx)</button>
+          <a class="btn btn-primary" href="#/recuperar?origem=${encodeURIComponent(conferencia.id)}">Reler base e retomar pendentes</a>
           <a class="btn btn-primary" href="#/nova">➕ Nova Conferência</a>
         </div>
       </div>

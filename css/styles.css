@@ -117,6 +117,7 @@ img, svg { max-width: 100%; }
 .muted { color: var(--muted); }
 .center { text-align: center; }
 .hidden { display: none !important; }
+[hidden] { display: none !important; }
 
 /* ---------- Cards ---------- */
 .card {

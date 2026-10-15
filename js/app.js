@@ -24,6 +24,7 @@ const ROUTE_DEFS = [
   { path: '/conferencia/:id/conferidos', load: () => import('./screens/conferidos.js') },
   { path: '/conferencia/:id/resumo', load: () => import('./screens/resumo.js') },
   { path: '/historico', load: () => import('./screens/historico.js') },
+  { path: '/recuperar', load: () => import('./screens/recuperar.js') },
   { path: '/base', load: () => import('./screens/base.js') },
   { path: '/config', load: () => import('./screens/config.js') },
 ];

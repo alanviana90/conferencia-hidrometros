@@ -1,2 +1,4 @@
 .env
 .env.local
+recuperacao/
+.recovery-base.csv

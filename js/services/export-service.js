@@ -21,6 +21,7 @@ const STATUS_LABEL = {
   SERIE_INEXISTENTE: 'SÉRIE INEXISTENTE (não consta na base)',
   PENDENTE: 'PENDENTE',
   ADICIONADO: 'EXCEDENTE — ADICIONADO NA CONFERÊNCIA',
+  PENDENTE_IDENTIFICACAO: 'PENDENTE — IDENTIFICAR SÉRIE NA BASE',
 };
 
 /**
@@ -38,7 +39,7 @@ export async function buildRelatorioLinhas(conferenciaId) {
   const itemPorHidrometroId = new Map();
   const itensExtras = [];
   for (const item of itens) {
-    if (item.status === 'FORA_DO_FILTRO' || item.status === 'SERIE_INEXISTENTE' || item.status === 'ADICIONADO') {
+    if (item.status === 'FORA_DO_FILTRO' || item.status === 'SERIE_INEXISTENTE' || item.status === 'ADICIONADO' || item.status === 'PENDENTE_IDENTIFICACAO') {
       itensExtras.push(item);
     } else if (item.hidrometroId) {
       itemPorHidrometroId.set(item.hidrometroId, item);
@@ -62,7 +63,7 @@ export async function buildRelatorioLinhas(conferenciaId) {
       'Data de Recebimento': formatDateBR(hidrometro.dataRecebimento),
       Status: item ? STATUS_LABEL[item.status] || item.status : STATUS_LABEL.PENDENTE,
       Duplicado: hidrometro.temSerieDuplicada ? 'Sim' : 'Não',
-      'Data/Hora da Conferência': item ? formatDateTimeBR(item.timestamp) : '',
+      'Data/Hora da Conferência': item ? item.dataOriginal || formatDateTimeBR(item.timestamp) : '',
       Observação: hidrometro.observacoes || '',
     });
   }
@@ -80,7 +81,7 @@ export async function buildRelatorioLinhas(conferenciaId) {
       'Data de Recebimento': hidrometro ? formatDateBR(hidrometro.dataRecebimento) : '',
       Status: STATUS_LABEL[item.status] || item.status,
       Duplicado: hidrometro && hidrometro.temSerieDuplicada ? 'Sim' : 'Não',
-      'Data/Hora da Conferência': formatDateTimeBR(item.timestamp),
+      'Data/Hora da Conferência': item.dataOriginal || formatDateTimeBR(item.timestamp),
       Observação: hidrometro ? hidrometro.observacoes || '' : '',
     });
   }
